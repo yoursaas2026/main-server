@@ -1,7 +1,7 @@
 import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
 import { db } from './db/index.js'
-import { users } from './db/schema.js'
+import { developers, clients, admins } from './db/schema.js'
 import { sql } from 'drizzle-orm'
 
 const app = new Hono()
