@@ -1,15 +1,30 @@
-import { serve } from '@hono/node-server'
-import { Hono } from 'hono'
-import { db } from './db/index.js'
-import { developers, clients, admins } from './db/schema.js'
-import { sql } from 'drizzle-orm'
+import { serve } from '@hono/node-server';
+import { Hono } from 'hono';
+import { cors } from 'hono/cors';
+import { logger } from 'hono/logger';
+import { db } from './db/index.js';
+import { sql } from 'drizzle-orm';
+import { env } from './config/env.js';
+import developerAuthRoutes from './routes/developer/auth.routes.js';
+import userAuthRoutes from './routes/user/auth.routes.js';
 
-const app = new Hono()
+const app = new Hono();
 
+// Middleware
+app.use('*', logger());
+app.use(
+  '*',
+  cors({
+    origin: env.CORS_ORIGIN.split(','),
+    credentials: true,
+    allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowHeaders: ['Content-Type', 'Authorization'],
+  })
+);
+
+// Health check
 app.get('/', async (c) => {
   try {
-
-    // Option 2: List all tables in PostgreSQL (if you want to see tables)
     const tables = await db.execute(sql`
       SELECT table_name 
       FROM information_schema.tables 
@@ -17,25 +32,67 @@ app.get('/', async (c) => {
     `);
 
     return c.json({
-      message: "Message from YourSaaS",
-      databaseStatus: "Connected successfully ✅",
-      tablesInDatabase: tables
-    })
+      message: 'YourSaaS API Server',
+      version: '1.0.0',
+      status: 'healthy',
+      databaseStatus: 'Connected ✅',
+      tablesInDatabase: tables,
+      endpoints: {
+        auth: '/api/developer/auth',
+        userAuth: '/api/user/auth',
+        health: '/',
+      },
+    });
   } catch (err) {
     return c.json({
-      message: "Message from YourSaaS",
-      error: "Database not connected or configured properly",
-      details: err instanceof Error ? err.message : String(err)
-    })
+      message: 'YourSaaS API Server',
+      status: 'unhealthy',
+      error: 'Database connection failed',
+      details: err instanceof Error ? err.message : String(err),
+    }, 500);
   }
-})
+});
 
-const port = 3000
-console.log(`Server is running on port ${port}`)
+// API Routes
+app.route('/api/developer/auth', developerAuthRoutes);
+app.route('/api/user/auth', userAuthRoutes);
+
+// 404 handler
+app.notFound((c) => {
+  return c.json({
+    error: 'Not Found',
+    message: 'The requested endpoint does not exist',
+    path: c.req.path,
+  }, 404);
+});
+
+// Error handler
+app.onError((err, c) => {
+  console.error('Server error:', err);
+  return c.json({
+    error: 'Internal Server Error',
+    message: err.message || 'An unexpected error occurred',
+  }, 500);
+});
+
+const port = env.PORT;
+console.log(`
+🚀 YourSaaS API Server Started
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📍 Server running on: http://localhost:${port}
+🌍 Environment: ${env.NODE_ENV}
+🔐 Authentication: Enabled
+  - Email/Password: ✅
+  - Google OAuth: ${env.GOOGLE_CLIENT_ID ? '✅' : '❌'}
+  - Microsoft OAuth: ${env.MICROSOFT_CLIENT_ID ? '✅' : '❌'}
+  - Apple OAuth: ${env.APPLE_CLIENT_ID ? '✅' : '❌'}
+📧 Email Service: ${env.BREVO_API_KEY ? '✅ Brevo' : '❌'}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+`);
 
 serve({
   fetch: app.fetch,
-  port
-})
+  port,
+});
 
-export default app
+export default app;
