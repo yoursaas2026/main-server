@@ -71,16 +71,33 @@ export interface DeveloperPublicProfile {
     email: string;
     phone: string | null;
     profilePicture: string | null;
+    coverPicture: string | null;
     bio: string | null;
     skills: string | null;
     experience: number | null;
     portfolioUrl: string | null;
     githubUrl: string | null;
     linkedinUrl: string | null;
+    twitterUrl: string | null;
+    headline: string | null;
+    location: string | null;
+    company: string | null;
+    hourlyRate: number | null;
+    servicesOffered: string | null;
+    pastExperiences: string | null;
+    portfolioProjects: string | null;
+    openToOpenSource: boolean | null;
+    availableForHire: boolean | null;
+    status: string | null;
+    blockReason: string | null;
     kycStatus: string | null;
     isEmailVerified: boolean | null;
     isPhoneVerified: boolean | null;
     authProvider: string | null;
+    plan: string | null;
+    planBillingCycle: string | null;
+    planStartDate: Date | null;
+    planEndDate: Date | null;
 }
 
 export interface DeveloperAuthProfile {
@@ -89,8 +106,15 @@ export interface DeveloperAuthProfile {
     email: string;
     phone: string | null;
     profilePicture: string | null;
+    coverPicture: string | null;
     isEmailVerified: boolean | null;
     kycStatus: string | null;
+    plan: string | null;
+    planBillingCycle: string | null;
+    planStartDate: Date | null;
+    planEndDate: Date | null;
+    status: string | null;
+    blockReason: string | null;
 }
 
 export interface ClientPublicProfile {

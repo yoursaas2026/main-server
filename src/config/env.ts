@@ -46,4 +46,15 @@ export const env = {
 
     // Security
     CORS_ORIGIN: process.env.CORS_ORIGIN || 'http://localhost:3001,http://localhost:3002',
+
+    // Razorpay
+    RAZORPAY_KEY_ID: process.env.RAZORPAY_KEY_ID || '',
+    RAZORPAY_KEY_SECRET: process.env.RAZORPAY_KEY_SECRET || '',
+    RAZORPAY_WEBHOOK_SECRET: process.env.RAZORPAY_WEBHOOK_SECRET || '',
+
+    // Pricing
+    PRO_MONTHLY_PRICE: parseInt(process.env.PRO_MONTHLY_PRICE || '29'),
+    PRO_YEARLY_PRICE: parseInt(process.env.PRO_YEARLY_PRICE || '279'),
+    ULTIMATE_MONTHLY_PRICE: parseInt(process.env.ULTIMATE_MONTHLY_PRICE || '99'),
+    ULTIMATE_YEARLY_PRICE: parseInt(process.env.ULTIMATE_YEARLY_PRICE || '950'),
 };

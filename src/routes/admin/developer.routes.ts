@@ -9,5 +9,6 @@ const adminDeveloperRoutes = new Hono<BlankEnv, BlankSchema, '/api/admin/develop
 adminDeveloperRoutes.get('/', authMiddleware, (c) => adminDeveloperController.getAllDevelopers(c));
 adminDeveloperRoutes.get('/:id', authMiddleware, (c) => adminDeveloperController.getDeveloperDetails(c));
 adminDeveloperRoutes.put('/:id/kyc', authMiddleware, (c) => adminDeveloperController.updateKycStatus(c));
+adminDeveloperRoutes.put('/:id/block', authMiddleware, (c) => adminDeveloperController.blockDeveloper(c));
 
 export default adminDeveloperRoutes;

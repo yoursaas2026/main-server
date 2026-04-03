@@ -10,6 +10,8 @@ import adminAuthRoutes from './routes/admin/auth.routes.js';
 import adminDeveloperRoutes from './routes/admin/developer.routes.js';
 import developerAuthRoutes from './routes/developer/auth.routes.js';
 import developerKycRoutes from './routes/developer/kyc.routes.js';
+import developerPaymentRoutes from './routes/developer/payment.routes.js';
+import { developerProfileRoutes } from './routes/developer/profile.routes.js';
 import userAuthRoutes from './routes/user/auth.routes.js';
 
 const app = new Hono();
@@ -28,6 +30,7 @@ app.use(
 
 // Static files
 app.use('/public/*', serveStatic({ root: './' }));
+app.use('/uploads/*', serveStatic({ root: './' }));
 
 // Health check
 app.get('/', async (c) => {
@@ -65,6 +68,8 @@ app.route('/api/admin/auth', adminAuthRoutes);
 app.route('/api/admin/developers', adminDeveloperRoutes);
 app.route('/api/developer/auth', developerAuthRoutes);
 app.route('/api/developer/kyc', developerKycRoutes);
+app.route('/api/developer/payment', developerPaymentRoutes);
+app.route('/api/developer/profile', developerProfileRoutes);
 app.route('/api/user/auth', userAuthRoutes);
 
 // 404 handler

@@ -20,12 +20,26 @@ export const developers = pgTable('developers', {
 
     // Profile Information
     profilePicture: text('profile_picture'),
+    coverPicture: text('cover_picture'),
     bio: text('bio'),
     skills: text('skills'), // JSON string array of skills
     experience: integer('experience'), // years of experience
     portfolioUrl: text('portfolio_url'),
     githubUrl: text('github_url'),
     linkedinUrl: text('linkedin_url'),
+    twitterUrl: text('twitter_url'),
+    resumeUrl: text('resume_url'),
+    
+    // Freelance / Professional Info
+    headline: text('headline'),
+    location: varchar('location', { length: 100 }),
+    company: text('company'),
+    hourlyRate: integer('hourly_rate'), // In dollars/rupees
+    openToOpenSource: boolean('open_to_open_source').default(false),
+    availableForHire: boolean('available_for_hire').default(true),
+    servicesOffered: text('services_offered'), // JSON string array of services
+    pastExperiences: text('past_experiences'), // Stringified array of past jobs
+    portfolioProjects: text('portfolio_projects'), // Stringified array of projects
 
     // KYC (Know Your Customer) Verification
     kycStatus: varchar('kyc_status', { length: 20 }).default('pending'), // pending, submitted, verified, rejected
@@ -58,7 +72,14 @@ export const developers = pgTable('developers', {
     isEmailVerified: boolean('is_email_verified').default(false),
     isPhoneVerified: boolean('is_phone_verified').default(false),
     isAvailable: boolean('is_available').default(true),
-    status: varchar('status', { length: 20 }).default('active'), // active, inactive, suspended
+    status: varchar('status', { length: 20 }).default('active'), // active, blocked, suspended
+    blockReason: text('block_reason'), // Details on why the developer was blocked
+
+    // Subscription Plan
+    plan: varchar('plan', { length: 20 }).default('base'), // base, pro, ultimate
+    planBillingCycle: varchar('plan_billing_cycle', { length: 20 }).default('monthly'), // monthly, yearly
+    planStartDate: timestamp('plan_start_date'),
+    planEndDate: timestamp('plan_end_date'),
 
     // Timestamps
     createdAt: timestamp('created_at').defaultNow(),
@@ -128,4 +149,19 @@ export const admins = pgTable('admins', {
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
     lastLoginAt: timestamp('last_login_at'),
+});
+
+// Developer Payments Table
+export const developerPayments = pgTable('developer_payments', {
+    id: serial('id').primaryKey(),
+    developerId: integer('developer_id').references(() => developers.id).notNull(),
+    orderId: varchar('order_id', { length: 100 }), // razorpay order id
+    paymentId: varchar('payment_id', { length: 100 }), // razorpay payment id
+    plan: varchar('plan', { length: 20 }), // pro, ultimate
+    billingCycle: varchar('billing_cycle', { length: 20 }), // monthly, yearly
+    amount: integer('amount'),
+    currency: varchar('currency', { length: 10 }).default('USD'),
+    status: varchar('status', { length: 20 }).default('created'), // created, completed, failed
+    createdAt: timestamp('created_at').defaultNow(),
+    completedAt: timestamp('completed_at'),
 });

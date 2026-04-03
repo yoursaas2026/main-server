@@ -21,7 +21,8 @@ export class AdminDeveloperController {
                     status: developers.status,
                     kycStatus: developers.kycStatus,
                     kycSubmittedAt: developers.kycSubmittedAt,
-                    createdAt: developers.createdAt
+                    createdAt: developers.createdAt,
+                    plan: developers.plan
                 })
                 .from(developers)
                 .orderBy(desc(developers.createdAt));
@@ -123,6 +124,49 @@ export class AdminDeveloperController {
         } catch (error) {
             console.error('[AdminDeveloper] updateKycStatus error:', error);
             return c.json({ success: false, error: 'Failed to update KYC status' }, 500);
+        }
+    }
+
+    async blockDeveloper(c: Context) {
+        try {
+            const devId = parseInt(c.req.param('id'), 10);
+            if (isNaN(devId)) return c.json({ success: false, error: 'Invalid developer ID' }, 400);
+
+            const body = await c.req.json();
+            const { action, reason } = body;
+
+            if (action === 'block' && (!reason || reason.trim().length === 0)) {
+                return c.json({ success: false, error: 'A valid reason is required to block a developer.' }, 400);
+            }
+
+            const isBlocked = action === 'block';
+
+            const [updated] = await db.update(developers)
+                .set({
+                    status: isBlocked ? 'blocked' : 'active',
+                    blockReason: isBlocked ? reason : null
+                })
+                .where(eq(developers.id, devId))
+                .returning({
+                    id: developers.id,
+                    status: developers.status,
+                    blockReason: developers.blockReason
+                });
+
+            if (!updated) {
+                return c.json({ success: false, error: 'Developer not found' }, 404);
+            }
+
+            // Note: you can optionally send an email hook out to the blocked developer here.
+            
+            return c.json({ 
+                success: true, 
+                message: isBlocked ? `Developer blocked successfully.` : `Developer unblocked successfully.`, 
+                data: updated 
+            });
+        } catch (error) {
+            console.error('[AdminDeveloper] blockDeveloper error:', error);
+            return c.json({ success: false, error: 'Failed to update block status' }, 500);
         }
     }
 }
