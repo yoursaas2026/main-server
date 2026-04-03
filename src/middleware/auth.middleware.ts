@@ -34,9 +34,8 @@ export const optionalAuthMiddleware = async (c: Context, next: Next) => {
             try {
                 const decoded = verifyToken(token);
                 c.set('user', decoded);
-            } catch (error) {
-                // Token is invalid but we don't fail the request
-                console.log('Invalid token in optional auth');
+            } catch {
+                // Token is invalid — silently ignore, request continues unauthenticated
             }
         }
 

@@ -1,11 +1,14 @@
 import { serve } from '@hono/node-server';
+import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { db } from './db/index.js';
 import { sql } from 'drizzle-orm';
 import { env } from './config/env.js';
+import adminAuthRoutes from './routes/admin/auth.routes.js';
 import developerAuthRoutes from './routes/developer/auth.routes.js';
+import developerKycRoutes from './routes/developer/kyc.routes.js';
 import userAuthRoutes from './routes/user/auth.routes.js';
 
 const app = new Hono();
@@ -21,6 +24,9 @@ app.use(
     allowHeaders: ['Content-Type', 'Authorization'],
   })
 );
+
+// Static files
+app.use('/public/*', serveStatic({ root: './' }));
 
 // Health check
 app.get('/', async (c) => {
@@ -54,7 +60,9 @@ app.get('/', async (c) => {
 });
 
 // API Routes
+app.route('/api/admin/auth', adminAuthRoutes);
 app.route('/api/developer/auth', developerAuthRoutes);
+app.route('/api/developer/kyc', developerKycRoutes);
 app.route('/api/user/auth', userAuthRoutes);
 
 // 404 handler

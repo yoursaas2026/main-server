@@ -45,7 +45,8 @@ export const developers = pgTable('developers', {
     addressProofType: varchar('address_proof_type', { length: 50 }), // utility_bill, bank_statement, etc.
     addressProofImage: text('address_proof_image'), // URL to uploaded image
     selfieImage: text('selfie_image'), // URL to selfie for verification
-
+    livenessVideo: text('liveness_video'), // URL to liveness video
+    
     // KYC Address Information
     kycAddress: text('kyc_address'),
     kycCity: varchar('kyc_city', { length: 100 }),
@@ -107,36 +108,18 @@ export const clients = pgTable('clients', {
     lastLoginAt: timestamp('last_login_at'),
 });
 
-// Admin Table (Email/Password Only - No OAuth)
+// Admin Table
 export const admins = pgTable('admins', {
     id: serial('id').primaryKey(),
-    username: varchar('username', { length: 50 }).unique().notNull(),
+    name: text('name').notNull(),
     email: text('email').unique().notNull(),
-    phone: varchar('phone', { length: 20 }),
-    password: text('password').notNull(), // Required - admins must use email/password
-
-    // Password Reset (Email/Password Only)
-    resetPasswordToken: text('reset_password_token'),
-    resetPasswordExpiry: timestamp('reset_password_expiry'),
+    password: text('password').notNull(),
 
     // Profile Information
-    name: text('name').notNull(),
     profilePicture: text('profile_picture'),
 
-    // Admin Role & Permissions
-    role: varchar('role', { length: 20 }).default('admin'), // super_admin, admin, moderator
-    permissions: text('permissions'), // JSON string array of permissions
-
-    // Security & Access
-    isSuperAdmin: boolean('is_super_admin').default(false),
-    canManageDevelopers: boolean('can_manage_developers').default(true),
-    canManageClients: boolean('can_manage_clients').default(true),
-    canManageAdmins: boolean('can_manage_admins').default(false),
-    canVerifyKYC: boolean('can_verify_kyc').default(false), // Permission to verify developer KYC
-
-    // Status & Verification
-    isEmailVerified: boolean('is_email_verified').default(false),
-    status: varchar('status', { length: 20 }).default('active'), // active, inactive, suspended
+    // Status
+    status: varchar('status', { length: 20 }).default('active'), // active, inactive
 
     // Audit Information
     createdBy: integer('created_by'), // admin ID who created this admin

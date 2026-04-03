@@ -19,6 +19,7 @@ export const env = {
     GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET || '',
     DEVELOPER_GOOGLE_CALLBACK_URL: process.env.DEVELOPER_GOOGLE_CALLBACK_URL || 'http://localhost:3000/api/developer/auth/google/callback',
     USER_GOOGLE_CALLBACK_URL: process.env.USER_GOOGLE_CALLBACK_URL || 'http://localhost:3000/api/user/auth/google/callback',
+    ADMIN_GOOGLE_CALLBACK_URL: process.env.ADMIN_GOOGLE_CALLBACK_URL || 'http://localhost:3000/api/admin/auth/google/callback',
 
     // OAuth - Microsoft
     MICROSOFT_CLIENT_ID: process.env.MICROSOFT_CLIENT_ID || '',
@@ -41,6 +42,7 @@ export const env = {
     // Frontend URLs
     DEVELOPER_PORTAL_URL: process.env.DEVELOPER_PORTAL_URL || 'http://localhost:3001',
     USER_PORTAL_URL: process.env.USER_PORTAL_URL || 'http://localhost:3002',
+    ADMIN_PORTAL_URL: process.env.ADMIN_PORTAL_URL || 'http://localhost:3003',
 
     // Security
     CORS_ORIGIN: process.env.CORS_ORIGIN || 'http://localhost:3001,http://localhost:3002',

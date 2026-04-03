@@ -1,0 +1,1 @@
+ALTER TABLE "developers" ADD COLUMN "liveness_video" text;

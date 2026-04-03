@@ -1,30 +1,31 @@
 import { Hono } from 'hono';
-import { authController } from '../../controllers/developer/auth.controller.js';
+import type { BlankEnv, BlankSchema } from 'hono/types';
+import { developerAuthController } from '../../controllers/developer/auth.controller.js';
 import { authMiddleware } from '../../middleware/auth.middleware.js';
 
-const authRoutes = new Hono();
+const developerAuthRoutes = new Hono<BlankEnv, BlankSchema, '/api/developer/auth'>();
 
-// Email/Password Authentication
-authRoutes.post('/register', (c) => authController.register(c));
-authRoutes.post('/login', (c) => authController.login(c));
+// ── Email / Password ──────────────────────────────────────────────────────────
+developerAuthRoutes.post('/register', (c) => developerAuthController.register(c));
+developerAuthRoutes.post('/login', (c) => developerAuthController.login(c));
 
-// Password Reset
-authRoutes.post('/forgot-password', (c) => authController.forgotPassword(c));
-authRoutes.post('/reset-password', (c) => authController.resetPassword(c));
+// ── Password Reset ────────────────────────────────────────────────────────────
+developerAuthRoutes.post('/forgot-password', (c) => developerAuthController.forgotPassword(c));
+developerAuthRoutes.post('/reset-password', (c) => developerAuthController.resetPassword(c));
 
-// Google OAuth
-authRoutes.get('/google', (c) => authController.googleAuth(c));
-authRoutes.get('/google/callback', (c) => authController.googleCallback(c));
+// ── Google OAuth ──────────────────────────────────────────────────────────────
+developerAuthRoutes.get('/google', (c) => developerAuthController.googleAuth(c));
+developerAuthRoutes.get('/google/callback', (c) => developerAuthController.googleCallback(c));
 
-// Microsoft OAuth
-authRoutes.get('/microsoft', (c) => authController.microsoftAuth(c));
-authRoutes.get('/microsoft/callback', (c) => authController.microsoftCallback(c));
+// ── Microsoft OAuth ───────────────────────────────────────────────────────────
+developerAuthRoutes.get('/microsoft', (c) => developerAuthController.microsoftAuth(c));
+developerAuthRoutes.get('/microsoft/callback', (c) => developerAuthController.microsoftCallback(c));
 
-// Apple OAuth
-authRoutes.get('/apple', (c) => authController.appleAuth(c));
-authRoutes.post('/apple/callback', (c) => authController.appleCallback(c)); // Apple uses POST
+// ── Apple OAuth (Apple uses POST for callback) ────────────────────────────────
+developerAuthRoutes.get('/apple', (c) => developerAuthController.appleAuth(c));
+developerAuthRoutes.post('/apple/callback', (c) => developerAuthController.appleCallback(c));
 
-// Protected Routes
-authRoutes.get('/me', authMiddleware, (c) => authController.getCurrentUser(c));
+// ── Protected ─────────────────────────────────────────────────────────────────
+developerAuthRoutes.get('/me', authMiddleware, (c) => developerAuthController.getCurrentUser(c));
 
-export default authRoutes;
+export default developerAuthRoutes;

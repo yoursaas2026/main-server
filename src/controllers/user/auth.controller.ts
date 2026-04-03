@@ -4,89 +4,132 @@ import { clients } from '../../db/schema.js';
 import { eq } from 'drizzle-orm';
 import { hashPassword, comparePassword, generateResetToken } from '../../utils/password.js';
 import { generateToken } from '../../utils/jwt.js';
-import { emailService } from '../../services/email.service.js';
+import { notificationService } from '../../services/notification.service.js';
 import { oauthService, type OAuthUserData } from '../../services/oauth.service.js';
 import { env } from '../../config/env.js';
+import {
+    RegisterSchema,
+    LoginSchema,
+    ForgotPasswordSchema,
+    ResetPasswordSchema,
+    type ClientAuthProfile,
+    type ClientPublicProfile,
+    type AuthResponseData,
+} from '../../types/auth.types.js';
+
+// ─── Helper: pick only safe fields to send back to clients ────────────────────
+
+function pickClientAuthProfile(client: typeof clients.$inferSelect): ClientAuthProfile {
+    return {
+        id: client.id,
+        name: client.name,
+        email: client.email,
+        phone: client.phone,
+        profilePicture: client.profilePicture,
+        isEmailVerified: client.isEmailVerified,
+    };
+}
+
+function pickClientPublicProfile(client: typeof clients.$inferSelect): ClientPublicProfile {
+    return {
+        id: client.id,
+        name: client.name,
+        email: client.email,
+        phone: client.phone,
+        profilePicture: client.profilePicture,
+        companyName: client.companyName,
+        isEmailVerified: client.isEmailVerified,
+        authProvider: client.authProvider,
+    };
+}
+
+// ─── Helper: build the OAuth provider ID column map ───────────────────────────
+
+type OAuthProvider = OAuthUserData['provider'];
+
+const PROVIDER_ID_FIELD = {
+    google: 'googleId',
+    microsoft: 'microsoftId',
+    apple: 'appleId',
+} as const satisfies Record<OAuthProvider, keyof typeof clients.$inferSelect>;
+
+// ─── Controller ───────────────────────────────────────────────────────────────
 
 export class UserAuthController {
-    // User Registration (Email/Password)
+    // ── Register ──────────────────────────────────────────────────────────────
+
     async register(c: Context) {
+        const body = await c.req.json().catch(() => null);
+        const parsed = RegisterSchema.safeParse(body);
+
+        if (!parsed.success) {
+            return c.json(
+                { success: false, error: parsed.error.issues[0].message },
+                400,
+            );
+        }
+
+        const { name, email, password, phone } = parsed.data;
+
         try {
-            const { name, email, password, phone } = await c.req.json();
-
-            // Validation
-            if (!name || !email || !password) {
-                return c.json({ error: 'Name, email, and password are required' }, 400);
-            }
-
-            if (password.length < 8) {
-                return c.json({ error: 'Password must be at least 8 characters long' }, 400);
-            }
-
-            // Check if user already exists
-            const existingUser = await db
-                .select()
+            // Single DB read: check existence
+            const [existing] = await db
+                .select({ id: clients.id })
                 .from(clients)
                 .where(eq(clients.email, email))
                 .limit(1);
 
-            if (existingUser.length > 0) {
-                return c.json({ error: 'Email already registered' }, 409);
+            if (existing) {
+                return c.json({ success: false, error: 'Email already registered' }, 409);
             }
 
-            // Hash password
             const hashedPassword = await hashPassword(password);
 
-            // Create user
-            const [newUser] = await db
+            const [newClient] = await db
                 .insert(clients)
                 .values({
                     name,
                     email,
                     password: hashedPassword,
-                    phone: phone || null,
+                    phone: phone ?? null,
                     authProvider: 'email',
                     isEmailVerified: false,
                 })
                 .returning();
 
-            // Generate JWT token
-            const token = generateToken({
-                id: newUser.id,
-                email: newUser.email,
-                role: 'client',
-            });
+            const token = generateToken({ id: newClient.id, email: newClient.email, role: 'client' });
 
-            // Send welcome email
-            await emailService.sendWelcomeEmail(newUser.email, newUser.name);
+            // Fire-and-forget — never block registration on email delivery
+            notificationService.sendWelcomeEmail(newClient.email, newClient.name);
 
-            return c.json({
-                message: 'Registration successful',
+            const data: AuthResponseData<ClientAuthProfile> = {
                 token,
-                user: {
-                    id: newUser.id,
-                    name: newUser.name,
-                    email: newUser.email,
-                    phone: newUser.phone,
-                    isEmailVerified: newUser.isEmailVerified,
-                },
-            }, 201);
+                user: pickClientAuthProfile(newClient),
+            };
+
+            return c.json({ success: true, message: 'Registration successful', data }, 201);
         } catch (error) {
-            console.error('Registration error:', error);
-            return c.json({ error: 'Registration failed' }, 500);
+            console.error('[UserAuth] register error:', error);
+            return c.json({ success: false, error: 'Registration failed' }, 500);
         }
     }
 
-    // User Login (Email/Password)
+    // ── Login ─────────────────────────────────────────────────────────────────
+
     async login(c: Context) {
+        const body = await c.req.json().catch(() => null);
+        const parsed = LoginSchema.safeParse(body);
+
+        if (!parsed.success) {
+            return c.json(
+                { success: false, error: parsed.error.issues[0].message },
+                400,
+            );
+        }
+
+        const { email, password } = parsed.data;
+
         try {
-            const { email, password } = await c.req.json();
-
-            if (!email || !password) {
-                return c.json({ error: 'Email and password are required' }, 400);
-            }
-
-            // Find user
             const [user] = await db
                 .select()
                 .from(clients)
@@ -94,356 +137,286 @@ export class UserAuthController {
                 .limit(1);
 
             if (!user) {
-                return c.json({ error: 'Invalid credentials' }, 401);
+                return c.json({ success: false, error: 'Invalid credentials' }, 401);
             }
 
-            // Check if user registered with OAuth
+            // OAuth-only accounts have no password
             if (!user.password) {
-                return c.json({
-                    error: `This account was registered with ${user.authProvider}. Please use ${user.authProvider} to login.`
-                }, 401);
+                return c.json(
+                    {
+                        success: false,
+                        error: `This account uses ${user.authProvider} sign-in. Please use ${user.authProvider} to log in.`,
+                    },
+                    401,
+                );
             }
 
-            // Verify password
-            const isPasswordValid = await comparePassword(password, user.password);
-
-            if (!isPasswordValid) {
-                return c.json({ error: 'Invalid credentials' }, 401);
+            const isValid = await comparePassword(password, user.password);
+            if (!isValid) {
+                return c.json({ success: false, error: 'Invalid credentials' }, 401);
             }
 
-            // Check account status
             if (user.status !== 'active') {
-                return c.json({ error: 'Account is inactive or suspended' }, 403);
+                return c.json({ success: false, error: 'Account is inactive or suspended' }, 403);
             }
 
-            // Update last login
-            await db
-                .update(clients)
+            // Update last login (non-blocking, failure is acceptable)
+            db.update(clients)
                 .set({ lastLoginAt: new Date() })
-                .where(eq(clients.id, user.id));
+                .where(eq(clients.id, user.id))
+                .catch((err) =>
+                    console.error('[UserAuth] Failed to update lastLoginAt:', err),
+                );
 
-            // Generate JWT token
-            const token = generateToken({
-                id: user.id,
-                email: user.email,
-                role: 'client',
-            });
+            const token = generateToken({ id: user.id, email: user.email, role: 'client' });
 
-            return c.json({
-                message: 'Login successful',
+            const data: AuthResponseData<ClientAuthProfile> = {
                 token,
-                user: {
-                    id: user.id,
-                    name: user.name,
-                    email: user.email,
-                    phone: user.phone,
-                    profilePicture: user.profilePicture,
-                    isEmailVerified: user.isEmailVerified,
-                },
-            });
+                user: pickClientAuthProfile(user),
+            };
+
+            return c.json({ success: true, message: 'Login successful', data });
         } catch (error) {
-            console.error('Login error:', error);
-            return c.json({ error: 'Login failed' }, 500);
+            console.error('[UserAuth] login error:', error);
+            return c.json({ success: false, error: 'Login failed' }, 500);
         }
     }
 
-    // OAuth Login/Register Handler
-    async handleOAuthCallback(c: Context, userData: OAuthUserData) {
-        try {
-            // Check if user exists with this OAuth provider
-            let user;
+    // ── OAuth Callback (shared logic) ─────────────────────────────────────────
 
-            if (userData.provider === 'google') {
-                [user] = await db
-                    .select()
-                    .from(clients)
-                    .where(eq(clients.googleId, userData.providerId))
-                    .limit(1);
-            } else if (userData.provider === 'microsoft') {
-                [user] = await db
-                    .select()
-                    .from(clients)
-                    .where(eq(clients.microsoftId, userData.providerId))
-                    .limit(1);
-            } else if (userData.provider === 'apple') {
-                [user] = await db
-                    .select()
-                    .from(clients)
-                    .where(eq(clients.appleId, userData.providerId))
-                    .limit(1);
-            }
+    async handleOAuthCallback(
+        _c: Context,
+        userData: OAuthUserData,
+    ): Promise<AuthResponseData<ClientAuthProfile>> {
+        const providerField = PROVIDER_ID_FIELD[userData.provider];
 
-            // If user doesn't exist with provider ID, check by email
-            if (!user) {
-                [user] = await db
-                    .select()
-                    .from(clients)
-                    .where(eq(clients.email, userData.email))
-                    .limit(1);
+        // Look up by provider ID first
+        const [existingByProvider] = await db
+            .select()
+            .from(clients)
+            .where(eq(clients[providerField], userData.providerId))
+            .limit(1);
 
-                if (user) {
-                    // Link OAuth account to existing user
-                    const updateData: any = {};
+        let user = existingByProvider;
 
-                    if (userData.provider === 'google') {
-                        updateData.googleId = userData.providerId;
-                    } else if (userData.provider === 'microsoft') {
-                        updateData.microsoftId = userData.providerId;
-                    } else if (userData.provider === 'apple') {
-                        updateData.appleId = userData.providerId;
-                    }
+        if (!user) {
+            // Fallback: look up by email to link provider
+            const [existingByEmail] = await db
+                .select()
+                .from(clients)
+                .where(eq(clients.email, userData.email))
+                .limit(1);
 
-                    if (userData.emailVerified) {
-                        updateData.isEmailVerified = true;
-                    }
-
-                    [user] = await db
-                        .update(clients)
-                        .set(updateData)
-                        .where(eq(clients.id, user.id))
-                        .returning();
-                }
-            }
-
-            // If still no user, create new account
-            if (!user) {
-                const newUserData: any = {
-                    name: userData.name,
-                    email: userData.email,
-                    authProvider: userData.provider,
-                    isEmailVerified: userData.emailVerified,
-                    profilePicture: userData.picture,
+            if (existingByEmail) {
+                // Link OAuth provider to existing account
+                const updatePayload: Partial<typeof clients.$inferInsert> = {
+                    [providerField]: userData.providerId,
+                    ...(userData.emailVerified ? { isEmailVerified: true } : {}),
+                    lastLoginAt: new Date(),
                 };
 
-                if (userData.provider === 'google') {
-                    newUserData.googleId = userData.providerId;
-                } else if (userData.provider === 'microsoft') {
-                    newUserData.microsoftId = userData.providerId;
-                } else if (userData.provider === 'apple') {
-                    newUserData.appleId = userData.providerId;
-                }
-
                 [user] = await db
-                    .insert(clients)
-                    .values(newUserData)
-                    .returning();
-
-                // Send welcome email
-                await emailService.sendWelcomeEmail(user.email, user.name);
-            } else {
-                // Update last login
-                await db
                     .update(clients)
-                    .set({ lastLoginAt: new Date() })
-                    .where(eq(clients.id, user.id));
+                    .set(updatePayload)
+                    .where(eq(clients.id, existingByEmail.id))
+                    .returning();
             }
-
-            // Generate JWT token
-            const token = generateToken({
-                id: user.id,
-                email: user.email,
-                role: 'client',
-            });
-
-            return {
-                token,
-                user: {
-                    id: user.id,
-                    name: user.name,
-                    email: user.email,
-                    phone: user.phone,
-                    profilePicture: user.profilePicture,
-                    isEmailVerified: user.isEmailVerified,
-                },
-            };
-        } catch (error) {
-            console.error('OAuth callback error:', error);
-            throw error;
         }
+
+        if (!user) {
+            // New user — create account
+            const insertPayload: typeof clients.$inferInsert = {
+                name: userData.name,
+                email: userData.email,
+                authProvider: userData.provider,
+                isEmailVerified: userData.emailVerified,
+                profilePicture: userData.picture ?? null,
+                [providerField]: userData.providerId,
+            };
+
+            [user] = await db.insert(clients).values(insertPayload).returning();
+
+            // Fire-and-forget welcome email
+            notificationService.sendWelcomeEmail(user.email, user.name);
+        } else if (existingByProvider) {
+            // Existing provider match — bump last login (non-blocking)
+            db.update(clients)
+                .set({ lastLoginAt: new Date() })
+                .where(eq(clients.id, user.id))
+                .catch((err) =>
+                    console.error('[UserAuth] Failed to update lastLoginAt:', err),
+                );
+        }
+
+        const token = generateToken({ id: user.id, email: user.email, role: 'client' });
+
+        return { token, user: pickClientAuthProfile(user) };
     }
 
-    // Google OAuth
+    // ── Google OAuth ──────────────────────────────────────────────────────────
+
     async googleAuth(c: Context) {
         try {
-            const authUrl = await oauthService.getGoogleAuthUrl(
-                env.USER_GOOGLE_CALLBACK_URL
-            );
+            const authUrl = await oauthService.getGoogleAuthUrl(env.USER_GOOGLE_CALLBACK_URL);
             return c.redirect(authUrl);
         } catch (error) {
-            console.error('Google auth error:', error);
-            return c.json({ error: 'Failed to initiate Google authentication' }, 500);
+            console.error('[UserAuth] googleAuth error:', error);
+            return c.json({ success: false, error: 'Failed to initiate Google authentication' }, 500);
         }
     }
 
     async googleCallback(c: Context) {
+        const code = c.req.query('code');
+
+        if (!code) {
+            return c.redirect(`${env.USER_PORTAL_URL}/login?error=missing_code`);
+        }
+
         try {
-            const code = c.req.query('code');
-
-            if (!code) {
-                return c.json({ error: 'No authorization code provided' }, 400);
-            }
-
-            const userData = await oauthService.getGoogleUserInfo(
-                code,
-                env.USER_GOOGLE_CALLBACK_URL
-            );
+            const userData = await oauthService.getGoogleUserInfo(code, env.USER_GOOGLE_CALLBACK_URL);
             const result = await this.handleOAuthCallback(c, userData);
-
-            // Redirect to frontend with token
-            const frontendUrl = env.USER_PORTAL_URL || 'http://localhost:3002'; // Default to 3002 for user portal
-            return c.redirect(`${frontendUrl}/auth/callback?token=${result.token}`);
+            return c.redirect(`${env.USER_PORTAL_URL}/auth/callback?token=${result.token}`);
         } catch (error) {
-            console.error('Google callback error:', error);
-            const frontendUrl = env.USER_PORTAL_URL || 'http://localhost:3002';
-            return c.redirect(`${frontendUrl}/login?error=google_auth_failed`);
+            console.error('[UserAuth] googleCallback error:', error);
+            return c.redirect(`${env.USER_PORTAL_URL}/login?error=google_auth_failed`);
         }
     }
 
-    // Microsoft OAuth
+    // ── Microsoft OAuth ───────────────────────────────────────────────────────
+
     async microsoftAuth(c: Context) {
         try {
-            const authUrl = await oauthService.getMicrosoftAuthUrl(
-                env.USER_MICROSOFT_CALLBACK_URL
-            );
+            const authUrl = await oauthService.getMicrosoftAuthUrl(env.USER_MICROSOFT_CALLBACK_URL);
             return c.redirect(authUrl);
         } catch (error) {
-            console.error('Microsoft auth error:', error);
-            return c.json({ error: 'Failed to initiate Microsoft authentication' }, 500);
+            console.error('[UserAuth] microsoftAuth error:', error);
+            return c.json({ success: false, error: 'Failed to initiate Microsoft authentication' }, 500);
         }
     }
 
     async microsoftCallback(c: Context) {
+        const code = c.req.query('code');
+
+        if (!code) {
+            return c.redirect(`${env.USER_PORTAL_URL}/login?error=missing_code`);
+        }
+
         try {
-            const code = c.req.query('code');
-
-            if (!code) {
-                return c.json({ error: 'No authorization code provided' }, 400);
-            }
-
-            const userData = await oauthService.getMicrosoftUserInfo(
-                code,
-                env.USER_MICROSOFT_CALLBACK_URL
-            );
+            const userData = await oauthService.getMicrosoftUserInfo(code, env.USER_MICROSOFT_CALLBACK_URL);
             const result = await this.handleOAuthCallback(c, userData);
-
-            // Redirect to frontend with token
-            const frontendUrl = env.USER_PORTAL_URL || 'http://localhost:3002';
-            return c.redirect(`${frontendUrl}/auth/callback?token=${result.token}`);
+            return c.redirect(`${env.USER_PORTAL_URL}/auth/callback?token=${result.token}`);
         } catch (error) {
-            console.error('Microsoft callback error:', error);
-            const frontendUrl = env.USER_PORTAL_URL || 'http://localhost:3002';
-            return c.redirect(`${frontendUrl}/login?error=microsoft_auth_failed`);
+            console.error('[UserAuth] microsoftCallback error:', error);
+            return c.redirect(`${env.USER_PORTAL_URL}/login?error=microsoft_auth_failed`);
         }
     }
 
-    // Apple OAuth
+    // ── Apple OAuth ───────────────────────────────────────────────────────────
+
     async appleAuth(c: Context) {
         try {
-            const authUrl = await oauthService.getAppleAuthUrl(
-                `${env.APPLE_CALLBACK_URL.replace('/developer/', '/user/')}`
-            );
+            const authUrl = await oauthService.getAppleAuthUrl();
             return c.redirect(authUrl);
         } catch (error) {
-            console.error('Apple auth error:', error);
-            return c.json({ error: 'Failed to initiate Apple authentication' }, 500);
+            console.error('[UserAuth] appleAuth error:', error);
+            return c.json({ success: false, error: 'Failed to initiate Apple authentication' }, 500);
         }
     }
 
     async appleCallback(c: Context) {
+        const code = c.req.query('code');
+        const idToken = c.req.query('id_token') ?? undefined;
+
+        if (!code) {
+            return c.redirect(`${env.USER_PORTAL_URL}/login?error=missing_code`);
+        }
+
         try {
-            const code = c.req.query('code');
-            const idToken = c.req.query('id_token');
-
-            if (!code) {
-                return c.json({ error: 'No authorization code provided' }, 400);
-            }
-
             const userData = await oauthService.getAppleUserInfo(code, idToken);
             const result = await this.handleOAuthCallback(c, userData);
-
-            // Redirect to frontend with token
-            const frontendUrl = env.USER_PORTAL_URL || 'http://localhost:3002';
-            return c.redirect(`${frontendUrl}/auth/callback?token=${result.token}`);
+            return c.redirect(`${env.USER_PORTAL_URL}/auth/callback?token=${result.token}`);
         } catch (error) {
-            console.error('Apple callback error:', error);
-            const frontendUrl = env.USER_PORTAL_URL || 'http://localhost:3002';
-            return c.redirect(`${frontendUrl}/login?error=apple_auth_failed`);
+            console.error('[UserAuth] appleCallback error:', error);
+            return c.redirect(`${env.USER_PORTAL_URL}/login?error=apple_auth_failed`);
         }
     }
 
-    // Forgot Password
+    // ── Forgot Password ───────────────────────────────────────────────────────
+
     async forgotPassword(c: Context) {
+        const body = await c.req.json().catch(() => null);
+        const parsed = ForgotPasswordSchema.safeParse(body);
+
+        if (!parsed.success) {
+            return c.json({ success: false, error: parsed.error.issues[0].message }, 400);
+        }
+
+        const { email } = parsed.data;
+        // Always return the same message to prevent email enumeration
+        const safeResponse = {
+            success: true,
+            message: 'If that email is registered, a reset link has been sent',
+        } as const;
+
         try {
-            const { email } = await c.req.json();
-
-            if (!email) {
-                return c.json({ error: 'Email is required' }, 400);
-            }
-
             const [user] = await db
-                .select()
+                .select({ id: clients.id, email: clients.email, name: clients.name, password: clients.password })
                 .from(clients)
                 .where(eq(clients.email, email))
                 .limit(1);
 
-            // Don't reveal if email exists for security
-            if (!user) {
-                return c.json({ message: 'If the email exists, a reset link has been sent' });
-            }
+            if (!user) return c.json(safeResponse);
 
-            // Generate reset token
+            // Block password reset for OAuth-only accounts
+            if (!user.password) return c.json(safeResponse);
+
             const resetToken = generateResetToken();
-            const resetExpiry = new Date(Date.now() + 3600000); // 1 hour
+            const resetExpiry = new Date(Date.now() + 3_600_000); // 1 hour
 
-            // Save reset token
             await db
                 .update(clients)
-                .set({
-                    resetPasswordToken: resetToken,
-                    resetPasswordExpiry: resetExpiry,
-                })
+                .set({ resetPasswordToken: resetToken, resetPasswordExpiry: resetExpiry })
                 .where(eq(clients.id, user.id));
 
-            // Send reset email
-            // Note: We might need a separate method for user reset emails if the URL differs
-            const frontendUrl = env.USER_PORTAL_URL || 'http://localhost:3002';
-            await emailService.sendPasswordResetEmail(user.email, user.name, resetToken, frontendUrl);
+            // Fire-and-forget
+            notificationService.sendPasswordResetEmail(user.email, user.name, resetToken, env.USER_PORTAL_URL);
 
-            return c.json({ message: 'If the email exists, a reset link has been sent' });
+            return c.json(safeResponse);
         } catch (error) {
-            console.error('Forgot password error:', error);
-            return c.json({ error: 'Failed to process password reset' }, 500);
+            console.error('[UserAuth] forgotPassword error:', error);
+            return c.json({ success: false, error: 'Failed to process password reset' }, 500);
         }
     }
 
-    // Reset Password
+    // ── Reset Password ────────────────────────────────────────────────────────
+
     async resetPassword(c: Context) {
+        const body = await c.req.json().catch(() => null);
+        const parsed = ResetPasswordSchema.safeParse(body);
+
+        if (!parsed.success) {
+            return c.json({ success: false, error: parsed.error.issues[0].message }, 400);
+        }
+
+        const { token, newPassword } = parsed.data;
+
         try {
-            const { token, newPassword } = await c.req.json();
-
-            if (!token || !newPassword) {
-                return c.json({ error: 'Token and new password are required' }, 400);
-            }
-
-            if (newPassword.length < 8) {
-                return c.json({ error: 'Password must be at least 8 characters long' }, 400);
-            }
-
-            // Find user with valid token
             const [user] = await db
-                .select()
+                .select({
+                    id: clients.id,
+                    resetPasswordToken: clients.resetPasswordToken,
+                    resetPasswordExpiry: clients.resetPasswordExpiry,
+                })
                 .from(clients)
                 .where(eq(clients.resetPasswordToken, token))
                 .limit(1);
 
             if (!user || !user.resetPasswordExpiry || user.resetPasswordExpiry < new Date()) {
-                return c.json({ error: 'Invalid or expired reset token' }, 400);
+                return c.json({ success: false, error: 'Invalid or expired reset token' }, 400);
             }
 
-            // Hash new password
             const hashedPassword = await hashPassword(newPassword);
 
-            // Update password and clear reset token
             await db
                 .update(clients)
                 .set({
@@ -453,51 +426,45 @@ export class UserAuthController {
                 })
                 .where(eq(clients.id, user.id));
 
-            return c.json({ message: 'Password reset successful' });
+            return c.json({ success: true, message: 'Password reset successful' });
         } catch (error) {
-            console.error('Reset password error:', error);
-            return c.json({ error: 'Failed to reset password' }, 500);
+            console.error('[UserAuth] resetPassword error:', error);
+            return c.json({ success: false, error: 'Failed to reset password' }, 500);
         }
     }
 
-    // Get Current User
+    // ── Get Current User ──────────────────────────────────────────────────────
+
     async getCurrentUser(c: Context) {
+        const jwtUser = c.get('user');
+
+        if (!jwtUser) {
+            return c.json({ success: false, error: 'Unauthorized' }, 401);
+        }
+
+        if (jwtUser.role !== 'client') {
+            return c.json({ success: false, error: 'Access denied' }, 403);
+        }
+
         try {
-            const user = c.get('user');
-
-            if (!user) {
-                return c.json({ error: 'Unauthorized' }, 401);
-            }
-
-            if (user.role !== 'client') {
-                return c.json({ error: 'Unauthorized: Access denied' }, 403);
-            }
-
             const [client] = await db
                 .select()
                 .from(clients)
-                .where(eq(clients.id, user.id))
+                .where(eq(clients.id, jwtUser.id))
                 .limit(1);
 
             if (!client) {
-                return c.json({ error: 'User not found' }, 404);
+                return c.json({ success: false, error: 'User not found' }, 404);
             }
 
             return c.json({
-                user: {
-                    id: client.id,
-                    name: client.name,
-                    email: client.email,
-                    phone: client.phone,
-                    profilePicture: client.profilePicture,
-                    companyName: client.companyName,
-                    role: 'client',
-                    authProvider: client.authProvider,
-                },
+                success: true,
+                message: 'User fetched successfully',
+                data: { user: pickClientPublicProfile(client) },
             });
         } catch (error) {
-            console.error('Get current user error:', error);
-            return c.json({ error: 'Failed to get user data' }, 500);
+            console.error('[UserAuth] getCurrentUser error:', error);
+            return c.json({ success: false, error: 'Failed to get user data' }, 500);
         }
     }
 }
