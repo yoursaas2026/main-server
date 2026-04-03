@@ -7,6 +7,7 @@ import { db } from './db/index.js';
 import { sql } from 'drizzle-orm';
 import { env } from './config/env.js';
 import adminAuthRoutes from './routes/admin/auth.routes.js';
+import adminDeveloperRoutes from './routes/admin/developer.routes.js';
 import developerAuthRoutes from './routes/developer/auth.routes.js';
 import developerKycRoutes from './routes/developer/kyc.routes.js';
 import userAuthRoutes from './routes/user/auth.routes.js';
@@ -61,6 +62,7 @@ app.get('/', async (c) => {
 
 // API Routes
 app.route('/api/admin/auth', adminAuthRoutes);
+app.route('/api/admin/developers', adminDeveloperRoutes);
 app.route('/api/developer/auth', developerAuthRoutes);
 app.route('/api/developer/kyc', developerKycRoutes);
 app.route('/api/user/auth', userAuthRoutes);
