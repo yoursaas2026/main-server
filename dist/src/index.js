@@ -14,57 +14,49 @@ import developerPaymentRoutes from './routes/developer/payment.routes.js';
 import developerProductRoutes from './routes/developer/product.routes.js';
 import { developerProfileRoutes } from './routes/developer/profile.routes.js';
 import userAuthRoutes from './routes/user/auth.routes.js';
-
 const app = new Hono();
-
 // Middleware
 app.use('*', logger());
-app.use(
-  '*',
-  cors({
+app.use('*', cors({
     origin: env.CORS_ORIGIN.split(','),
     credentials: true,
     allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'Authorization'],
-  })
-);
-
+}));
 // Static files
 app.use('/public/*', serveStatic({ root: './' }));
 app.use('/uploads/*', serveStatic({ root: './' }));
-
 // Health check
 app.get('/', async (c) => {
-  try {
-    const tables = await db.execute(sql`
+    try {
+        const tables = await db.execute(sql `
       SELECT table_name 
       FROM information_schema.tables 
       WHERE table_schema = 'public'
     `);
-
-    return c.json({
-      message: 'YourSaaS API Server',
-      version: '1.0.0',
-      status: 'healthy',
-      databaseStatus: 'Connected ✅',
-      tablesInDatabase: tables,
-      endpoints: {
-        auth: '/api/developer/auth',
-        developerProducts: '/api/developer/products',
-        userAuth: '/api/user/auth',
-        health: '/',
-      },
-    });
-  } catch (err) {
-    return c.json({
-      message: 'YourSaaS API Server',
-      status: 'unhealthy',
-      error: 'Database connection failed',
-      details: err instanceof Error ? err.message : String(err),
-    }, 500);
-  }
+        return c.json({
+            message: 'YourSaaS API Server',
+            version: '1.0.0',
+            status: 'healthy',
+            databaseStatus: 'Connected ✅',
+            tablesInDatabase: tables,
+            endpoints: {
+                auth: '/api/developer/auth',
+                developerProducts: '/api/developer/products',
+                userAuth: '/api/user/auth',
+                health: '/',
+            },
+        });
+    }
+    catch (err) {
+        return c.json({
+            message: 'YourSaaS API Server',
+            status: 'unhealthy',
+            error: 'Database connection failed',
+            details: err instanceof Error ? err.message : String(err),
+        }, 500);
+    }
 });
-
 // API Routes
 app.route('/api/admin/auth', adminAuthRoutes);
 app.route('/api/admin/developers', adminDeveloperRoutes);
@@ -74,25 +66,22 @@ app.route('/api/developer/payment', developerPaymentRoutes);
 app.route('/api/developer/products', developerProductRoutes);
 app.route('/api/developer/profile', developerProfileRoutes);
 app.route('/api/user/auth', userAuthRoutes);
-
 // 404 handler
 app.notFound((c) => {
-  return c.json({
-    error: 'Not Found',
-    message: 'The requested endpoint does not exist',
-    path: c.req.path,
-  }, 404);
+    return c.json({
+        error: 'Not Found',
+        message: 'The requested endpoint does not exist',
+        path: c.req.path,
+    }, 404);
 });
-
 // Error handler
 app.onError((err, c) => {
-  console.error('Server error:', err);
-  return c.json({
-    error: 'Internal Server Error',
-    message: err.message || 'An unexpected error occurred',
-  }, 500);
+    console.error('Server error:', err);
+    return c.json({
+        error: 'Internal Server Error',
+        message: err.message || 'An unexpected error occurred',
+    }, 500);
 });
-
 const port = env.PORT;
 console.log(`
 🚀 YourSaaS API Server Started
@@ -107,10 +96,8 @@ console.log(`
 📧 Email Service: ${env.BREVO_API_KEY ? '✅ Brevo' : '❌'}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `);
-
 serve({
-  fetch: app.fetch,
-  port,
+    fetch: app.fetch,
+    port,
 });
-
 export default app;

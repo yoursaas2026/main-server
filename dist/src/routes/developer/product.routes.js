@@ -1,0 +1,11 @@
+import { Hono } from 'hono';
+import { authMiddleware } from '../../middleware/auth.middleware.js';
+import { developerProductController } from '../../controllers/developer/product.controller.js';
+const developerProductRoutes = new Hono();
+developerProductRoutes.use('/*', authMiddleware);
+developerProductRoutes.post('/', (c) => developerProductController.create(c));
+developerProductRoutes.get('/', (c) => developerProductController.listMine(c));
+developerProductRoutes.get('/:id', (c) => developerProductController.getOne(c));
+developerProductRoutes.put('/:id', (c) => developerProductController.update(c));
+developerProductRoutes.delete('/:id', (c) => developerProductController.remove(c));
+export default developerProductRoutes;
