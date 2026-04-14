@@ -250,3 +250,15 @@ export const productCategories = pgTable('product_categories', {
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
 });
+
+export const productReviews = pgTable('product_reviews', {
+    id: serial('id').primaryKey(),
+    productId: integer('product_id').references(() => developerProducts.id).notNull(),
+    clientId: integer('client_id').references(() => clients.id).notNull(),
+    rating: integer('rating').notNull(),
+    comment: text('comment').notNull(),
+    developerReply: text('developer_reply'),
+    developerRepliedAt: timestamp('developer_replied_at'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});

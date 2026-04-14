@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
-import { and, desc, eq, ne } from 'drizzle-orm';
+import { and, avg, count, desc, eq, ne } from 'drizzle-orm';
 import { db } from '../../db/index.js';
-import { developerProducts, productCategories } from '../../db/schema.js';
+import { clients, developerProducts, productCategories, productReviews } from '../../db/schema.js';
 import fs from 'fs';
 import path from 'path';
 import {
@@ -646,6 +646,127 @@ export class DeveloperProductController {
         } catch (error) {
             console.error('[DeveloperProduct] remove error:', error);
             return c.json({ success: false, error: 'Failed to delete product' }, 500);
+        }
+    }
+
+    /** Same `product_reviews` rows buyers see on the marketplace — scoped to this developer’s product. */
+    async listProductReviews(c: Context) {
+        const jwtUser = assertDeveloper(c);
+        if (!jwtUser) return c.json({ success: false, error: 'Unauthorized' }, 401);
+
+        const parsedId = ProductIdParamSchema.safeParse({ id: c.req.param('id') });
+        if (!parsedId.success) {
+            return c.json({ success: false, error: 'Invalid product ID' }, 400);
+        }
+
+        const productId = parsedId.data.id;
+
+        try {
+            const [owned] = await db
+                .select({ id: developerProducts.id })
+                .from(developerProducts)
+                .where(and(eq(developerProducts.id, productId), eq(developerProducts.developerId, jwtUser.id)))
+                .limit(1);
+
+            if (!owned) return c.json({ success: false, error: 'Product not found' }, 404);
+
+            const rows = await db
+                .select({
+                    id: productReviews.id,
+                    rating: productReviews.rating,
+                    comment: productReviews.comment,
+                    developerReply: productReviews.developerReply,
+                    developerRepliedAt: productReviews.developerRepliedAt,
+                    createdAt: productReviews.createdAt,
+                    userName: clients.name,
+                    companyName: clients.companyName,
+                })
+                .from(productReviews)
+                .innerJoin(clients, eq(productReviews.clientId, clients.id))
+                .where(eq(productReviews.productId, productId))
+                .orderBy(desc(productReviews.createdAt));
+
+            const [{ avgRating, totalReviews }] = await db
+                .select({
+                    avgRating: avg(productReviews.rating),
+                    totalReviews: count(productReviews.id),
+                })
+                .from(productReviews)
+                .where(eq(productReviews.productId, productId));
+
+            const reviews = rows.map((r) => ({
+                id: r.id,
+                user: r.userName,
+                role: r.companyName || 'Verified user',
+                rating: r.rating,
+                comment: r.comment,
+                createdAt: r.createdAt,
+                developerReply: r.developerReply,
+                developerRepliedAt: r.developerRepliedAt,
+            }));
+
+            return c.json({
+                success: true,
+                data: {
+                    rating: avgRating ? Number(avgRating) : 0,
+                    reviewCount: Number(totalReviews ?? 0),
+                    reviews,
+                },
+            });
+        } catch (error) {
+            console.error('[DeveloperProduct] listProductReviews error:', error);
+            return c.json({ success: false, error: 'Failed to fetch reviews' }, 500);
+        }
+    }
+
+    async upsertReviewReply(c: Context) {
+        const jwtUser = assertDeveloper(c);
+        if (!jwtUser) return c.json({ success: false, error: 'Unauthorized' }, 401);
+
+        const productId = Number(c.req.param('id'));
+        const reviewId = Number(c.req.param('reviewId'));
+        if (!Number.isInteger(productId) || productId < 1 || !Number.isInteger(reviewId) || reviewId < 1) {
+            return c.json({ success: false, error: 'Invalid IDs' }, 400);
+        }
+
+        const body = await c.req.json().catch(() => null);
+        const reply = typeof body?.reply === 'string' ? body.reply.trim() : '';
+        if (reply.length > 1000) {
+            return c.json({ success: false, error: 'Reply is too long (max 1000 chars)' }, 400);
+        }
+
+        try {
+            const [owned] = await db
+                .select({ id: developerProducts.id })
+                .from(developerProducts)
+                .where(and(eq(developerProducts.id, productId), eq(developerProducts.developerId, jwtUser.id)))
+                .limit(1);
+
+            if (!owned) return c.json({ success: false, error: 'Product not found' }, 404);
+
+            const [review] = await db
+                .select({ id: productReviews.id, productId: productReviews.productId })
+                .from(productReviews)
+                .where(eq(productReviews.id, reviewId))
+                .limit(1);
+
+            if (!review || review.productId !== productId) {
+                return c.json({ success: false, error: 'Review not found' }, 404);
+            }
+
+            await db
+                .update(productReviews)
+                .set({
+                    developerReply: reply.length ? reply : null,
+                    developerRepliedAt: reply.length ? new Date() : null,
+                    updatedAt: new Date(),
+                })
+                .where(eq(productReviews.id, reviewId));
+
+            return c.json({ success: true, message: reply.length ? 'Reply saved' : 'Reply removed' });
+        } catch (error) {
+            console.error('[DeveloperProduct] upsertReviewReply error:', error);
+            return c.json({ success: false, error: 'Failed to save reply' }, 500);
         }
     }
 

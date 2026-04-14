@@ -14,6 +14,7 @@ import developerKycRoutes from './routes/developer/kyc.routes.js';
 import developerPaymentRoutes from './routes/developer/payment.routes.js';
 import developerProductRoutes from './routes/developer/product.routes.js';
 import { developerProfileRoutes } from './routes/developer/profile.routes.js';
+import publicProductRoutes from './routes/public/product.routes.js';
 import userAuthRoutes from './routes/user/auth.routes.js';
 
 const app = new Hono();
@@ -75,6 +76,7 @@ app.route('/api/developer/kyc', developerKycRoutes);
 app.route('/api/developer/payment', developerPaymentRoutes);
 app.route('/api/developer/products', developerProductRoutes);
 app.route('/api/developer/profile', developerProfileRoutes);
+app.route('/api/public/products', publicProductRoutes);
 app.route('/api/user/auth', userAuthRoutes);
 
 // 404 handler
