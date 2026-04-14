@@ -8,6 +8,7 @@ import { sql } from 'drizzle-orm';
 import { env } from './config/env.js';
 import adminAuthRoutes from './routes/admin/auth.routes.js';
 import adminDeveloperRoutes from './routes/admin/developer.routes.js';
+import adminProductRoutes from './routes/admin/product.routes.js';
 import developerAuthRoutes from './routes/developer/auth.routes.js';
 import developerKycRoutes from './routes/developer/kyc.routes.js';
 import developerPaymentRoutes from './routes/developer/payment.routes.js';
@@ -22,7 +23,7 @@ app.use('*', logger());
 app.use(
   '*',
   cors({
-    origin: env.CORS_ORIGIN.split(','),
+    origin: env.CORS_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean),
     credentials: true,
     allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'Authorization'],
@@ -68,6 +69,7 @@ app.get('/', async (c) => {
 // API Routes
 app.route('/api/admin/auth', adminAuthRoutes);
 app.route('/api/admin/developers', adminDeveloperRoutes);
+app.route('/api/admin/products', adminProductRoutes);
 app.route('/api/developer/auth', developerAuthRoutes);
 app.route('/api/developer/kyc', developerKycRoutes);
 app.route('/api/developer/payment', developerPaymentRoutes);

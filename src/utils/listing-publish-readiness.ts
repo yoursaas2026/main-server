@@ -43,6 +43,8 @@ export function getMissingForLiveListing(input: DeveloperProductUpsertInput): st
     const tagline = input.tagline?.trim() ?? '';
     if (tagline.length < 8) missing.push('Tagline (at least 8 characters)');
 
+    if (input.productCategoryId == null) missing.push('Product category');
+
     const shortDesc = input.shortDescription?.trim() ?? '';
     if (shortDesc.length < 40) missing.push('Short description / overview (at least 40 characters)');
 

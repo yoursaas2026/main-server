@@ -85,6 +85,41 @@
       "when": 1775720600000,
       "tag": "0011_listing_status_draft_live",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1775800000000,
+      "tag": "0012_trust_yoursaas_certified",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1775801275934,
+      "tag": "0013_strong_talisman",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1776000000000,
+      "tag": "0014_product_categories",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1776163890326,
+      "tag": "0015_calm_lily_hollister",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1776164903843,
+      "tag": "0016_lumpy_cargill",
+      "breakpoints": true
     }
   ]
 }

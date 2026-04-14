@@ -45,7 +45,8 @@ export const env = {
     ADMIN_PORTAL_URL: process.env.ADMIN_PORTAL_URL || 'http://localhost:3003',
 
     // Security
-    CORS_ORIGIN: process.env.CORS_ORIGIN || 'http://localhost:3001,http://localhost:3002',
+    CORS_ORIGIN:
+        process.env.CORS_ORIGIN || 'http://localhost:3001,http://localhost:3002,http://localhost:3003',
 
     // Razorpay
     RAZORPAY_KEY_ID: process.env.RAZORPAY_KEY_ID || '',

@@ -174,6 +174,7 @@ export const developerProducts = pgTable('developer_products', {
 
     slug: varchar('slug', { length: 160 }).notNull().unique(),
     name: text('name').notNull(),
+    productCategoryId: integer('product_category_id'),
     tagline: text('tagline'),
 
     shortDescription: text('short_description'),
@@ -235,8 +236,17 @@ export const developerProducts = pgTable('developer_products', {
 
     trustVerifiedListing: boolean('trust_verified_listing').default(false),
     trustVerifiedByPlatform: boolean('trust_verified_by_platform').default(false),
+    /** Platform ops / admin only — not editable via developer product upsert. */
+    trustYourSaaSCertified: boolean('trust_yoursaas_certified').default(false),
     listingStatus: varchar('listing_status', { length: 20 }).default('draft'),
 
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const productCategories = pgTable('product_categories', {
+    id: serial('id').primaryKey(),
+    name: varchar('name', { length: 80 }).notNull().unique(),
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
 });

@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 import { and, desc, eq, ne } from 'drizzle-orm';
 import { db } from '../../db/index.js';
-import { developerProducts } from '../../db/schema.js';
+import { developerProducts, productCategories } from '../../db/schema.js';
 import fs from 'fs';
 import path from 'path';
 import {
@@ -137,12 +137,40 @@ async function applyMediaFromMultipart(
     };
 }
 
-function toDbRecord(input: DeveloperProductUpsertInput, developerId: number) {
+async function assertValidCategoryOrThrow(categoryId: number | null) {
+    if (categoryId == null) return;
+    const [row] = await db
+        .select({ id: productCategories.id })
+        .from(productCategories)
+        .where(eq(productCategories.id, categoryId))
+        .limit(1);
+    if (!row) {
+        throw new Error('Invalid product category. Please choose one from admin-managed categories.');
+    }
+}
+
+function toDbRecord(
+    input: DeveloperProductUpsertInput,
+    developerId: number,
+    options?: {
+        /** Update only: keep trust columns from DB. Create omits this so all trust flags stay false until admin sets them. */
+        preserveTrustFrom?: Pick<
+            typeof developerProducts.$inferSelect,
+            'trustVerifiedListing' | 'trustVerifiedByPlatform' | 'trustYourSaaSCertified'
+        >;
+    }
+) {
+    const t = options?.preserveTrustFrom;
+    const trustVerifiedListing = t ? (t.trustVerifiedListing ?? false) : false;
+    const trustVerifiedByPlatform = t ? (t.trustVerifiedByPlatform ?? false) : false;
+    const trustYourSaaSCertified = t ? (t.trustYourSaaSCertified ?? false) : false;
+
     return {
         developerId,
         projectId: input.projectId,
         slug: input.slug,
         name: input.name,
+        productCategoryId: input.productCategoryId,
         tagline: input.tagline,
         shortDescription: input.shortDescription,
         problem: input.problem,
@@ -187,8 +215,9 @@ function toDbRecord(input: DeveloperProductUpsertInput, developerId: number) {
         metaSetupTime: input.meta.setupTime,
         metaDifficulty: input.meta.difficulty,
         metaRequirements: input.meta.requirements,
-        trustVerifiedListing: input.trust.verifiedListing,
-        trustVerifiedByPlatform: input.trust.verifiedByPlatform,
+        trustVerifiedListing,
+        trustVerifiedByPlatform,
+        trustYourSaaSCertified,
         listingStatus: input.listingStatus,
         updatedAt: new Date(),
     };
@@ -201,6 +230,7 @@ function toApiProduct(row: typeof developerProducts.$inferSelect) {
         projectId: row.projectId,
         slug: row.slug,
         name: row.name,
+        productCategoryId: row.productCategoryId ?? null,
         tagline: row.tagline,
         shortDescription: row.shortDescription,
         problem: row.problem,
@@ -254,6 +284,7 @@ function toApiProduct(row: typeof developerProducts.$inferSelect) {
         trust: {
             verifiedListing: row.trustVerifiedListing ?? false,
             verifiedByPlatform: row.trustVerifiedByPlatform ?? false,
+            yoursaasCertified: row.trustYourSaaSCertified ?? false,
         },
         listingStatus: normalizeListingStatus(row.listingStatus),
         createdAt: row.createdAt,
@@ -285,6 +316,7 @@ export class DeveloperProductController {
             input = parsed.input;
             bodyMap = parsed.bodyMap;
             input = await applyMediaFromMultipart(input, bodyMap, jwtUser.id);
+            await assertValidCategoryOrThrow(input.productCategoryId);
         } catch (e) {
             return c.json({ success: false, error: e instanceof Error ? e.message : 'Invalid payload' }, 400);
         }
@@ -414,6 +446,7 @@ export class DeveloperProductController {
                     projectId: developerProducts.projectId,
                     slug: developerProducts.slug,
                     name: developerProducts.name,
+                    productCategoryId: developerProducts.productCategoryId,
                     tagline: developerProducts.tagline,
                     listingStatus: developerProducts.listingStatus,
                     trialDays: developerProducts.trialDays,
@@ -422,6 +455,7 @@ export class DeveloperProductController {
                     createdAt: developerProducts.createdAt,
                     iconUrl: developerProducts.iconUrl,
                     screenshotUrls: developerProducts.screenshotUrls,
+                    trustVerifiedByPlatform: developerProducts.trustVerifiedByPlatform,
                 })
                 .from(developerProducts)
                 .where(
@@ -441,6 +475,7 @@ export class DeveloperProductController {
                 projectId: r.projectId,
                 slug: r.slug,
                 name: r.name,
+                productCategoryId: r.productCategoryId ?? null,
                 tagline: r.tagline,
                 listingStatus: normalizeListingStatus(r.listingStatus),
                 trialDays: r.trialDays,
@@ -448,6 +483,7 @@ export class DeveloperProductController {
                 updatedAt: r.updatedAt,
                 createdAt: r.createdAt,
                 coverImageUrl: listRowCoverImage(r.iconUrl, r.screenshotUrls),
+                trustVerifiedByPlatform: r.trustVerifiedByPlatform ?? false,
             }));
 
             return c.json({
@@ -507,6 +543,7 @@ export class DeveloperProductController {
             input = parsed.input;
             bodyMap = parsed.bodyMap;
             input = await applyMediaFromMultipart(input, bodyMap, jwtUser.id);
+            await assertValidCategoryOrThrow(input.productCategoryId);
         } catch (e) {
             return c.json({ success: false, error: e instanceof Error ? e.message : 'Invalid payload' }, 400);
         }
@@ -552,7 +589,7 @@ export class DeveloperProductController {
 
             const [updated] = await db
                 .update(developerProducts)
-                .set(toDbRecord(input, jwtUser.id))
+                .set(toDbRecord(input, jwtUser.id, { preserveTrustFrom: existing }))
                 .where(and(
                     eq(developerProducts.id, parsedId.data.id),
                     eq(developerProducts.developerId, jwtUser.id)
@@ -609,6 +646,21 @@ export class DeveloperProductController {
         } catch (error) {
             console.error('[DeveloperProduct] remove error:', error);
             return c.json({ success: false, error: 'Failed to delete product' }, 500);
+        }
+    }
+
+    async listCategories(c: Context) {
+        const jwtUser = assertDeveloper(c);
+        if (!jwtUser) return c.json({ success: false, error: 'Unauthorized' }, 401);
+        try {
+            const rows = await db
+                .select({ id: productCategories.id, name: productCategories.name })
+                .from(productCategories)
+                .orderBy(productCategories.name);
+            return c.json({ success: true, data: { categories: rows } });
+        } catch (error) {
+            console.error('[DeveloperProduct] listCategories error:', error);
+            return c.json({ success: false, error: 'Failed to fetch categories' }, 500);
         }
     }
 }

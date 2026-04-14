@@ -9,6 +9,7 @@ developerProductRoutes.use('/*', authMiddleware);
 
 developerProductRoutes.post('/', (c) => developerProductController.create(c));
 developerProductRoutes.get('/', (c) => developerProductController.listMine(c));
+developerProductRoutes.get('/categories', (c) => developerProductController.listCategories(c));
 developerProductRoutes.get('/check-slug', (c) => developerProductController.checkSlugAvailability(c));
 developerProductRoutes.get('/:id', (c) => developerProductController.getOne(c));
 developerProductRoutes.put('/:id', (c) => developerProductController.update(c));

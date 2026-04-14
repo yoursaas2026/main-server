@@ -41,6 +41,7 @@ export const DeveloperProductUpsertSchema = z.object({
         .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Invalid slug format')
         .max(160),
     name: NonEmpty.max(200),
+    productCategoryId: z.number().int().positive().nullable().optional().default(null),
     tagline: z.string().trim().max(300).optional().default(''),
 
     shortDescription: z.string().trim().max(5000).optional().default(''),

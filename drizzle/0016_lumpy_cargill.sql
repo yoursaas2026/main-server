@@ -1,0 +1,1 @@
+ALTER TABLE "developer_products" DROP COLUMN IF EXISTS "product_category";
