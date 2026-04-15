@@ -12,10 +12,12 @@ import adminProductRoutes from './routes/admin/product.routes.js';
 import developerAuthRoutes from './routes/developer/auth.routes.js';
 import developerKycRoutes from './routes/developer/kyc.routes.js';
 import developerPaymentRoutes from './routes/developer/payment.routes.js';
+import developerChatRoutes from './routes/developer/chat.routes.js';
 import developerProductRoutes from './routes/developer/product.routes.js';
 import { developerProfileRoutes } from './routes/developer/profile.routes.js';
 import publicProductRoutes from './routes/public/product.routes.js';
 import userAuthRoutes from './routes/user/auth.routes.js';
+import userChatRoutes from './routes/user/chat.routes.js';
 
 const app = new Hono();
 
@@ -50,10 +52,12 @@ app.get('/', async (c) => {
       status: 'healthy',
       databaseStatus: 'Connected ✅',
       tablesInDatabase: tables,
-      endpoints: {
+        endpoints: {
         auth: '/api/developer/auth',
         developerProducts: '/api/developer/products',
         userAuth: '/api/user/auth',
+        userChat: '/api/user/chat',
+        developerChat: '/api/developer/chat',
         health: '/',
       },
     });
@@ -76,8 +80,10 @@ app.route('/api/developer/kyc', developerKycRoutes);
 app.route('/api/developer/payment', developerPaymentRoutes);
 app.route('/api/developer/products', developerProductRoutes);
 app.route('/api/developer/profile', developerProfileRoutes);
+app.route('/api/developer/chat', developerChatRoutes);
 app.route('/api/public/products', publicProductRoutes);
 app.route('/api/user/auth', userAuthRoutes);
+app.route('/api/user/chat', userChatRoutes);
 
 // 404 handler
 app.notFound((c) => {
@@ -109,6 +115,7 @@ console.log(`
   - Microsoft OAuth: ${env.MICROSOFT_CLIENT_ID ? '✅' : '❌'}
   - Apple OAuth: ${env.APPLE_CLIENT_ID ? '✅' : '❌'}
 📧 Email Service: ${env.BREVO_API_KEY ? '✅ Brevo' : '❌'}
+💬 Stream Chat: ${env.STREAM_API_KEY && env.STREAM_API_SECRET ? '✅' : '❌ (set STREAM_API_KEY + STREAM_API_SECRET)'}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `);
 

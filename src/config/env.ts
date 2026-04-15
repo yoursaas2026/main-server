@@ -46,7 +46,8 @@ export const env = {
 
     // Security
     CORS_ORIGIN:
-        process.env.CORS_ORIGIN || 'http://localhost:3001,http://localhost:3002,http://localhost:3003',
+        process.env.CORS_ORIGIN ||
+        'http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003',
 
     // Razorpay
     RAZORPAY_KEY_ID: process.env.RAZORPAY_KEY_ID || '',
@@ -58,4 +59,10 @@ export const env = {
     PRO_YEARLY_PRICE: parseInt(process.env.PRO_YEARLY_PRICE || '279'),
     ULTIMATE_MONTHLY_PRICE: parseInt(process.env.ULTIMATE_MONTHLY_PRICE || '99'),
     ULTIMATE_YEARLY_PRICE: parseInt(process.env.ULTIMATE_YEARLY_PRICE || '950'),
+
+    /** GetStream Chat (https://getstream.io/chat/) — server issues user tokens; secret never goes to browsers */
+    STREAM_API_KEY: process.env.STREAM_API_KEY || '',
+    STREAM_API_SECRET: process.env.STREAM_API_SECRET || '',
+    /** Public origin for this API (used to build absolute avatar URLs for Stream user profiles) */
+    API_PUBLIC_ORIGIN: (process.env.API_PUBLIC_ORIGIN || `http://localhost:${process.env.PORT || '3000'}`).replace(/\/$/, ''),
 };
