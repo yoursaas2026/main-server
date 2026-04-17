@@ -1,68 +1,21 @@
-import type { Context } from 'hono';
 import { and, avg, count, desc, eq } from 'drizzle-orm';
 import { db } from '../../db/index.js';
 import { clients, developerProducts, developers, productCategories, productReviews } from '../../db/schema.js';
-import { absoluteMediaUrl } from '../../services/stream-chat.service.js';
-
-function parseJson<T>(value: string | null, fallback: T): T {
-    if (!value) return fallback;
+function parseJson(value, fallback) {
+    if (!value)
+        return fallback;
     try {
-        return JSON.parse(value) as T;
-    } catch {
+        return JSON.parse(value);
+    }
+    catch {
         return fallback;
     }
 }
-
-function normalizeListingStatus(raw: string | null | undefined): 'draft' | 'live' {
+function normalizeListingStatus(raw) {
     return (raw || '').toLowerCase() === 'live' ? 'live' : 'draft';
 }
-
 export class PublicProductController {
-    /** Minimal live listing for chat tag cards (`<YourSaaS>{id}</YourSaaS>`). */
-    async getCardById(c: Context) {
-        const id = Number(c.req.param('id'));
-        if (!Number.isInteger(id) || id < 1) {
-            return c.json({ success: false, error: 'Invalid product id' }, 400);
-        }
-        try {
-            const [row] = await db
-                .select({
-                    id: developerProducts.id,
-                    slug: developerProducts.slug,
-                    name: developerProducts.name,
-                    tagline: developerProducts.tagline,
-                    iconUrl: developerProducts.iconUrl,
-                    projectId: developerProducts.projectId,
-                    developerId: developerProducts.developerId,
-                    listingStatus: developerProducts.listingStatus,
-                })
-                .from(developerProducts)
-                .where(eq(developerProducts.id, id))
-                .limit(1);
-
-            if (!row || normalizeListingStatus(row.listingStatus) !== 'live') {
-                return c.json({ success: false, error: 'Product not found' }, 404);
-            }
-
-            return c.json({
-                success: true,
-                data: {
-                    id: row.id,
-                    slug: row.slug,
-                    name: row.name,
-                    tagline: row.tagline ?? '',
-                    iconUrl: absoluteMediaUrl(row.iconUrl) ?? null,
-                    projectId: row.projectId,
-                    developerId: row.developerId,
-                },
-            });
-        } catch (error) {
-            console.error('[PublicProduct] getCardById error:', error);
-            return c.json({ success: false, error: 'Failed to fetch product' }, 500);
-        }
-    }
-
-    private async resolveLiveProduct(slug: string) {
+    async resolveLiveProduct(slug) {
         const [row] = await db
             .select({ id: developerProducts.id, slug: developerProducts.slug })
             .from(developerProducts)
@@ -70,46 +23,44 @@ export class PublicProductController {
             .limit(1);
         return row ?? null;
     }
-
-    private getCurrentClientId(c: Context): number | null {
-        const jwtUser = c.get('user') as { id?: number; role?: string } | undefined;
-        if (!jwtUser || jwtUser.role !== 'client' || typeof jwtUser.id !== 'number') return null;
+    getCurrentClientId(c) {
+        const jwtUser = c.get('user');
+        if (!jwtUser || jwtUser.role !== 'client' || typeof jwtUser.id !== 'number')
+            return null;
         return jwtUser.id;
     }
-
-    async listReviews(c: Context) {
+    async listReviews(c) {
         const slug = (c.req.param('slug') || '').trim().toLowerCase();
-        if (!slug) return c.json({ success: false, error: 'Invalid slug' }, 400);
+        if (!slug)
+            return c.json({ success: false, error: 'Invalid slug' }, 400);
         try {
             const product = await this.resolveLiveProduct(slug);
-            if (!product) return c.json({ success: false, error: 'Product not found' }, 404);
-
+            if (!product)
+                return c.json({ success: false, error: 'Product not found' }, 404);
             const currentClientId = this.getCurrentClientId(c);
             const rows = await db
                 .select({
-                    id: productReviews.id,
-                    rating: productReviews.rating,
-                    comment: productReviews.comment,
-                    developerReply: productReviews.developerReply,
-                    developerRepliedAt: productReviews.developerRepliedAt,
-                    createdAt: productReviews.createdAt,
-                    clientId: clients.id,
-                    userName: clients.name,
-                    companyName: clients.companyName,
-                })
+                id: productReviews.id,
+                rating: productReviews.rating,
+                comment: productReviews.comment,
+                developerReply: productReviews.developerReply,
+                developerRepliedAt: productReviews.developerRepliedAt,
+                createdAt: productReviews.createdAt,
+                clientId: clients.id,
+                userName: clients.name,
+                companyName: clients.companyName,
+            })
                 .from(productReviews)
                 .innerJoin(clients, eq(productReviews.clientId, clients.id))
                 .where(eq(productReviews.productId, product.id))
                 .orderBy(desc(productReviews.createdAt));
-
             const [{ avgRating, totalReviews }] = await db
                 .select({
-                    avgRating: avg(productReviews.rating),
-                    totalReviews: count(productReviews.id),
-                })
+                avgRating: avg(productReviews.rating),
+                totalReviews: count(productReviews.id),
+            })
                 .from(productReviews)
                 .where(eq(productReviews.productId, product.id));
-
             const reviews = rows.map((r) => ({
                 id: r.id,
                 user: r.userName,
@@ -121,7 +72,6 @@ export class PublicProductController {
                 developerReply: r.developerReply,
                 developerRepliedAt: r.developerRepliedAt,
             }));
-
             return c.json({
                 success: true,
                 data: {
@@ -130,19 +80,20 @@ export class PublicProductController {
                     reviews,
                 },
             });
-        } catch (error) {
+        }
+        catch (error) {
             console.error('[PublicProduct] listReviews error:', error);
             return c.json({ success: false, error: 'Failed to fetch reviews' }, 500);
         }
     }
-
-    async createReview(c: Context) {
-        const jwtUser = c.get('user') as { id?: number; role?: string } | undefined;
+    async createReview(c) {
+        const jwtUser = c.get('user');
         if (!jwtUser || jwtUser.role !== 'client' || typeof jwtUser.id !== 'number') {
             return c.json({ success: false, error: 'Login required' }, 401);
         }
         const slug = (c.req.param('slug') || '').trim().toLowerCase();
-        if (!slug) return c.json({ success: false, error: 'Invalid slug' }, 400);
+        if (!slug)
+            return c.json({ success: false, error: 'Invalid slug' }, 400);
         const body = await c.req.json().catch(() => null);
         const rating = Number(body?.rating);
         const comment = typeof body?.comment === 'string' ? body.comment.trim() : '';
@@ -154,15 +105,14 @@ export class PublicProductController {
         }
         try {
             const product = await this.resolveLiveProduct(slug);
-            if (!product) return c.json({ success: false, error: 'Product not found' }, 404);
-
+            if (!product)
+                return c.json({ success: false, error: 'Product not found' }, 404);
             const [existing] = await db
                 .select({ id: productReviews.id })
                 .from(productReviews)
                 .where(and(eq(productReviews.productId, product.id), eq(productReviews.clientId, jwtUser.id)))
                 .limit(1);
-
-            let reviewId: number;
+            let reviewId;
             if (existing) {
                 const [updated] = await db
                     .update(productReviews)
@@ -170,33 +120,33 @@ export class PublicProductController {
                     .where(eq(productReviews.id, existing.id))
                     .returning({ id: productReviews.id });
                 reviewId = updated.id;
-            } else {
+            }
+            else {
                 const [created] = await db
                     .insert(productReviews)
                     .values({
-                        productId: product.id,
-                        clientId: jwtUser.id,
-                        rating,
-                        comment,
-                        updatedAt: new Date(),
-                    })
+                    productId: product.id,
+                    clientId: jwtUser.id,
+                    rating,
+                    comment,
+                    updatedAt: new Date(),
+                })
                     .returning({ id: productReviews.id });
                 reviewId = created.id;
             }
-
             return c.json({
                 success: true,
                 message: 'Review saved',
                 data: { reviewId },
             });
-        } catch (error) {
+        }
+        catch (error) {
             console.error('[PublicProduct] createReview error:', error);
             return c.json({ success: false, error: 'Failed to save review' }, 500);
         }
     }
-
-    async deleteReview(c: Context) {
-        const jwtUser = c.get('user') as { id?: number; role?: string } | undefined;
+    async deleteReview(c) {
+        const jwtUser = c.get('user');
         if (!jwtUser || jwtUser.role !== 'client' || typeof jwtUser.id !== 'number') {
             return c.json({ success: false, error: 'Login required' }, 401);
         }
@@ -207,93 +157,83 @@ export class PublicProductController {
         }
         try {
             const product = await this.resolveLiveProduct(slug);
-            if (!product) return c.json({ success: false, error: 'Product not found' }, 404);
-
+            if (!product)
+                return c.json({ success: false, error: 'Product not found' }, 404);
             const [review] = await db
                 .select({ id: productReviews.id, clientId: productReviews.clientId, productId: productReviews.productId })
                 .from(productReviews)
                 .where(eq(productReviews.id, reviewId))
                 .limit(1);
-
             if (!review || review.productId !== product.id) {
                 return c.json({ success: false, error: 'Review not found' }, 404);
             }
             if (review.clientId !== jwtUser.id) {
                 return c.json({ success: false, error: 'You can only delete your own review' }, 403);
             }
-
             await db.delete(productReviews).where(eq(productReviews.id, reviewId));
             return c.json({ success: true, message: 'Review deleted' });
-        } catch (error) {
+        }
+        catch (error) {
             console.error('[PublicProduct] deleteReview error:', error);
             return c.json({ success: false, error: 'Failed to delete review' }, 500);
         }
     }
-
-    async getBySlug(c: Context) {
+    async getBySlug(c) {
         const slug = (c.req.param('slug') || '').trim().toLowerCase();
-        if (!slug) return c.json({ success: false, error: 'Invalid slug' }, 400);
-
+        if (!slug)
+            return c.json({ success: false, error: 'Invalid slug' }, 400);
         try {
             const [row] = await db
                 .select({
-                    product: developerProducts,
-                    developer: {
-                        id: developers.id,
-                        name: developers.name,
-                        company: developers.company,
-                        profilePicture: developers.profilePicture,
-                        headline: developers.headline,
-                        location: developers.location,
-                        createdAt: developers.createdAt,
-                        plan: developers.plan,
-                        kycStatus: developers.kycStatus,
-                    },
-                    categoryName: productCategories.name,
-                })
+                product: developerProducts,
+                developer: {
+                    id: developers.id,
+                    name: developers.name,
+                    company: developers.company,
+                    profilePicture: developers.profilePicture,
+                    headline: developers.headline,
+                    location: developers.location,
+                    createdAt: developers.createdAt,
+                    plan: developers.plan,
+                    kycStatus: developers.kycStatus,
+                },
+                categoryName: productCategories.name,
+            })
                 .from(developerProducts)
                 .innerJoin(developers, eq(developerProducts.developerId, developers.id))
                 .leftJoin(productCategories, eq(developerProducts.productCategoryId, productCategories.id))
-                .where(
-                    and(
-                        eq(developerProducts.slug, slug),
-                        eq(developerProducts.listingStatus, 'live')
-                    )
-                )
+                .where(and(eq(developerProducts.slug, slug), eq(developerProducts.listingStatus, 'live')))
                 .limit(1);
-
-            if (!row) return c.json({ success: false, error: 'Product not found' }, 404);
-
+            if (!row)
+                return c.json({ success: false, error: 'Product not found' }, 404);
             const p = row.product;
             const currentClientId = this.getCurrentClientId(c);
             const reviewRows = await db
                 .select({
-                    id: productReviews.id,
-                    rating: productReviews.rating,
-                    comment: productReviews.comment,
-                    developerReply: productReviews.developerReply,
-                    developerRepliedAt: productReviews.developerRepliedAt,
-                    createdAt: productReviews.createdAt,
-                    clientId: clients.id,
-                    userName: clients.name,
-                    companyName: clients.companyName,
-                })
+                id: productReviews.id,
+                rating: productReviews.rating,
+                comment: productReviews.comment,
+                developerReply: productReviews.developerReply,
+                developerRepliedAt: productReviews.developerRepliedAt,
+                createdAt: productReviews.createdAt,
+                clientId: clients.id,
+                userName: clients.name,
+                companyName: clients.companyName,
+            })
                 .from(productReviews)
                 .innerJoin(clients, eq(productReviews.clientId, clients.id))
                 .where(eq(productReviews.productId, p.id))
                 .orderBy(desc(productReviews.createdAt))
                 .limit(25);
-
             const [{ avgRating, totalReviews }] = await db
                 .select({
-                    avgRating: avg(productReviews.rating),
-                    totalReviews: count(productReviews.id),
-                })
+                avgRating: avg(productReviews.rating),
+                totalReviews: count(productReviews.id),
+            })
                 .from(productReviews)
                 .where(eq(productReviews.productId, p.id));
             const product = {
                 id: p.id,
-                projectId: p.projectId,
                 slug: p.slug,
                 name: p.name,
                 productCategoryId: p.productCategoryId ?? null,
@@ -304,17 +244,17 @@ export class PublicProductController {
                 solution: p.solution ?? '',
                 featuresTagline: p.featuresTagline ?? '',
                 featuresAboutBody: p.featuresAboutBody ?? '',
-                benefits: parseJson(p.benefits, [] as unknown[]),
-                features: parseJson(p.features, [] as unknown[]),
-                useCases: parseJson(p.useCases, [] as string[]),
-                audienceTags: parseJson(p.audienceTags, [] as string[]),
-                customizationTiers: parseJson(p.customizationTiers, [] as unknown[]),
+                benefits: parseJson(p.benefits, []),
+                features: parseJson(p.features, []),
+                useCases: parseJson(p.useCases, []),
+                audienceTags: parseJson(p.audienceTags, []),
+                customizationTiers: parseJson(p.customizationTiers, []),
                 trialDays: p.trialDays ?? 0,
                 freeTrial: p.freeTrial ?? false,
                 deploymentTime: p.deploymentTime ?? '',
                 bestFor: p.bestFor ?? '',
                 iconUrl: p.iconUrl || '',
-                screenshotUrls: parseJson(p.screenshotUrls, [] as string[]),
+                screenshotUrls: parseJson(p.screenshotUrls, []),
                 technical: {
                     stack: p.technicalStack ?? '',
                     deployment: p.technicalDeployment ?? '',
@@ -367,13 +307,12 @@ export class PublicProductController {
                 listingStatus: normalizeListingStatus(p.listingStatus),
                 developer: row.developer,
             };
-
             return c.json({ success: true, data: { product } });
-        } catch (error) {
+        }
+        catch (error) {
             console.error('[PublicProduct] getBySlug error:', error);
             return c.json({ success: false, error: 'Failed to fetch product' }, 500);
         }
     }
 }
-
 export const publicProductController = new PublicProductController();

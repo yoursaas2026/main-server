@@ -8,17 +8,21 @@ import { sql } from 'drizzle-orm';
 import { env } from './config/env.js';
 import adminAuthRoutes from './routes/admin/auth.routes.js';
 import adminDeveloperRoutes from './routes/admin/developer.routes.js';
+import adminProductRoutes from './routes/admin/product.routes.js';
 import developerAuthRoutes from './routes/developer/auth.routes.js';
 import developerKycRoutes from './routes/developer/kyc.routes.js';
 import developerPaymentRoutes from './routes/developer/payment.routes.js';
+import developerChatRoutes from './routes/developer/chat.routes.js';
 import developerProductRoutes from './routes/developer/product.routes.js';
 import { developerProfileRoutes } from './routes/developer/profile.routes.js';
+import publicProductRoutes from './routes/public/product.routes.js';
 import userAuthRoutes from './routes/user/auth.routes.js';
+import userChatRoutes from './routes/user/chat.routes.js';
 const app = new Hono();
 // Middleware
 app.use('*', logger());
 app.use('*', cors({
-    origin: env.CORS_ORIGIN.split(','),
+    origin: env.CORS_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean),
     credentials: true,
     allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'Authorization'],
@@ -44,6 +48,8 @@ app.get('/', async (c) => {
                 auth: '/api/developer/auth',
                 developerProducts: '/api/developer/products',
                 userAuth: '/api/user/auth',
+                userChat: '/api/user/chat',
+                developerChat: '/api/developer/chat',
                 health: '/',
             },
         });
@@ -60,12 +66,16 @@ app.get('/', async (c) => {
 // API Routes
 app.route('/api/admin/auth', adminAuthRoutes);
 app.route('/api/admin/developers', adminDeveloperRoutes);
+app.route('/api/admin/products', adminProductRoutes);
 app.route('/api/developer/auth', developerAuthRoutes);
 app.route('/api/developer/kyc', developerKycRoutes);
 app.route('/api/developer/payment', developerPaymentRoutes);
 app.route('/api/developer/products', developerProductRoutes);
 app.route('/api/developer/profile', developerProfileRoutes);
+app.route('/api/developer/chat', developerChatRoutes);
+app.route('/api/public/products', publicProductRoutes);
 app.route('/api/user/auth', userAuthRoutes);
+app.route('/api/user/chat', userChatRoutes);
 // 404 handler
 app.notFound((c) => {
     return c.json({
@@ -94,6 +104,7 @@ console.log(`
   - Microsoft OAuth: ${env.MICROSOFT_CLIENT_ID ? '✅' : '❌'}
   - Apple OAuth: ${env.APPLE_CLIENT_ID ? '✅' : '❌'}
 📧 Email Service: ${env.BREVO_API_KEY ? '✅ Brevo' : '❌'}
+💬 Stream Chat: ${env.STREAM_API_KEY && env.STREAM_API_SECRET ? '✅' : '❌ (set STREAM_API_KEY + STREAM_API_SECRET)'}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `);
 serve({

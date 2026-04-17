@@ -1,6 +1,6 @@
-import { and, desc, eq, ne } from 'drizzle-orm';
+import { and, avg, count, desc, eq, ne } from 'drizzle-orm';
 import { db } from '../../db/index.js';
-import { developerProducts } from '../../db/schema.js';
+import { clients, developerProducts, productCategories, productReviews } from '../../db/schema.js';
 import fs from 'fs';
 import path from 'path';
 import { DeveloperProductUpsertSchema, ProductIdParamSchema, } from '../../types/developer-product.types.js';
@@ -30,6 +30,18 @@ function normalizeListingStatus(raw) {
     if (s === 'live')
         return 'live';
     return 'draft';
+}
+/** Best image for product list cards: app icon, else first gallery screenshot. */
+function listRowCoverImage(iconUrl, screenshotUrlsJson) {
+    const icon = iconUrl?.trim();
+    if (icon)
+        return icon;
+    const shots = parseJson(screenshotUrlsJson, []);
+    for (const s of shots) {
+        if (typeof s === 'string' && s.trim())
+            return s.trim();
+    }
+    return null;
 }
 /**
  * Same pattern as developer profile images: `uploads/...` on disk, URL `/uploads/...`
@@ -104,12 +116,29 @@ async function applyMediaFromMultipart(input, bodyMap, developerId) {
         screenshotUrls,
     };
 }
-function toDbRecord(input, developerId) {
+async function assertValidCategoryOrThrow(categoryId) {
+    if (categoryId == null)
+        return;
+    const [row] = await db
+        .select({ id: productCategories.id })
+        .from(productCategories)
+        .where(eq(productCategories.id, categoryId))
+        .limit(1);
+    if (!row) {
+        throw new Error('Invalid product category. Please choose one from admin-managed categories.');
+    }
+}
+function toDbRecord(input, developerId, options) {
+    const t = options?.preserveTrustFrom;
+    const trustVerifiedListing = t ? (t.trustVerifiedListing ?? false) : false;
+    const trustVerifiedByPlatform = t ? (t.trustVerifiedByPlatform ?? false) : false;
+    const trustYourSaaSCertified = t ? (t.trustYourSaaSCertified ?? false) : false;
     return {
         developerId,
         projectId: input.projectId,
         slug: input.slug,
         name: input.name,
+        productCategoryId: input.productCategoryId,
         tagline: input.tagline,
         shortDescription: input.shortDescription,
         problem: input.problem,
@@ -154,8 +183,9 @@ function toDbRecord(input, developerId) {
         metaSetupTime: input.meta.setupTime,
         metaDifficulty: input.meta.difficulty,
         metaRequirements: input.meta.requirements,
-        trustVerifiedListing: input.trust.verifiedListing,
-        trustVerifiedByPlatform: input.trust.verifiedByPlatform,
+        trustVerifiedListing,
+        trustVerifiedByPlatform,
+        trustYourSaaSCertified,
         listingStatus: input.listingStatus,
         updatedAt: new Date(),
     };
@@ -167,6 +197,7 @@ function toApiProduct(row) {
         projectId: row.projectId,
         slug: row.slug,
         name: row.name,
+        productCategoryId: row.productCategoryId ?? null,
         tagline: row.tagline,
         shortDescription: row.shortDescription,
         problem: row.problem,
@@ -220,6 +251,7 @@ function toApiProduct(row) {
         trust: {
             verifiedListing: row.trustVerifiedListing ?? false,
             verifiedByPlatform: row.trustVerifiedByPlatform ?? false,
+            yoursaasCertified: row.trustYourSaaSCertified ?? false,
         },
         listingStatus: normalizeListingStatus(row.listingStatus),
         createdAt: row.createdAt,
@@ -249,6 +281,7 @@ export class DeveloperProductController {
             input = parsed.input;
             bodyMap = parsed.bodyMap;
             input = await applyMediaFromMultipart(input, bodyMap, jwtUser.id);
+            await assertValidCategoryOrThrow(input.productCategoryId);
         }
         catch (e) {
             return c.json({ success: false, error: e instanceof Error ? e.message : 'Invalid payload' }, 400);
@@ -289,6 +322,60 @@ export class DeveloperProductController {
             return c.json({ success: false, error: 'Failed to create product' }, 500);
         }
     }
+    /** Query: slug (required), excludeProductId (optional, must be caller's product). */
+    async checkSlugAvailability(c) {
+        const jwtUser = assertDeveloper(c);
+        if (!jwtUser)
+            return c.json({ success: false, error: 'Unauthorized' }, 401);
+        const raw = (c.req.query('slug') || '').trim().toLowerCase();
+        const excludeRaw = c.req.query('excludeProductId');
+        const parsedExclude = excludeRaw ? parseInt(excludeRaw, 10) : NaN;
+        const excludeProductId = Number.isFinite(parsedExclude) && parsedExclude > 0 ? parsedExclude : undefined;
+        const slugOk = raw.length >= 2 && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(raw) && raw.length <= 160;
+        if (!slugOk) {
+            return c.json({
+                success: true,
+                data: { available: false, validFormat: false },
+            });
+        }
+        if (excludeProductId) {
+            const [owned] = await db
+                .select({ id: developerProducts.id })
+                .from(developerProducts)
+                .where(and(eq(developerProducts.id, excludeProductId), eq(developerProducts.developerId, jwtUser.id)))
+                .limit(1);
+            if (!owned) {
+                return c.json({ success: false, error: 'Invalid exclude product' }, 400);
+            }
+        }
+        try {
+            const [found] = await db
+                .select({ id: developerProducts.id })
+                .from(developerProducts)
+                .where(eq(developerProducts.slug, raw))
+                .limit(1);
+            if (!found) {
+                return c.json({
+                    success: true,
+                    data: { available: true, validFormat: true },
+                });
+            }
+            if (excludeProductId && found.id === excludeProductId) {
+                return c.json({
+                    success: true,
+                    data: { available: true, validFormat: true },
+                });
+            }
+            return c.json({
+                success: true,
+                data: { available: false, validFormat: true },
+            });
+        }
+        catch (error) {
+            console.error('[DeveloperProduct] checkSlugAvailability error:', error);
+            return c.json({ success: false, error: 'Slug check failed' }, 500);
+        }
+    }
     async listMine(c) {
         const jwtUser = assertDeveloper(c);
         if (!jwtUser)
@@ -303,12 +390,16 @@ export class DeveloperProductController {
                 projectId: developerProducts.projectId,
                 slug: developerProducts.slug,
                 name: developerProducts.name,
+                productCategoryId: developerProducts.productCategoryId,
                 tagline: developerProducts.tagline,
                 listingStatus: developerProducts.listingStatus,
                 trialDays: developerProducts.trialDays,
                 freeTrial: developerProducts.freeTrial,
                 updatedAt: developerProducts.updatedAt,
                 createdAt: developerProducts.createdAt,
+                iconUrl: developerProducts.iconUrl,
+                screenshotUrls: developerProducts.screenshotUrls,
+                trustVerifiedByPlatform: developerProducts.trustVerifiedByPlatform,
             })
                 .from(developerProducts)
                 .where(projectId
@@ -318,8 +409,19 @@ export class DeveloperProductController {
                 .limit(limit)
                 .offset(offset);
             const products = rows.map((r) => ({
-                ...r,
+                id: r.id,
+                projectId: r.projectId,
+                slug: r.slug,
+                name: r.name,
+                productCategoryId: r.productCategoryId ?? null,
+                tagline: r.tagline,
                 listingStatus: normalizeListingStatus(r.listingStatus),
+                trialDays: r.trialDays,
+                freeTrial: r.freeTrial,
+                updatedAt: r.updatedAt,
+                createdAt: r.createdAt,
+                coverImageUrl: listRowCoverImage(r.iconUrl, r.screenshotUrls),
+                trustVerifiedByPlatform: r.trustVerifiedByPlatform ?? false,
             }));
             return c.json({
                 success: true,
@@ -372,6 +474,7 @@ export class DeveloperProductController {
             input = parsed.input;
             bodyMap = parsed.bodyMap;
             input = await applyMediaFromMultipart(input, bodyMap, jwtUser.id);
+            await assertValidCategoryOrThrow(input.productCategoryId);
         }
         catch (e) {
             return c.json({ success: false, error: e instanceof Error ? e.message : 'Invalid payload' }, 400);
@@ -404,7 +507,7 @@ export class DeveloperProductController {
             }
             const [updated] = await db
                 .update(developerProducts)
-                .set(toDbRecord(input, jwtUser.id))
+                .set(toDbRecord(input, jwtUser.id, { preserveTrustFrom: existing }))
                 .where(and(eq(developerProducts.id, parsedId.data.id), eq(developerProducts.developerId, jwtUser.id)))
                 .returning();
             cleanupReplacedProductMedia({ iconUrl: existing.iconUrl, screenshotUrls: existing.screenshotUrls }, { iconUrl: input.iconUrl, screenshotUrls: input.screenshotUrls });
@@ -444,6 +547,131 @@ export class DeveloperProductController {
         catch (error) {
             console.error('[DeveloperProduct] remove error:', error);
             return c.json({ success: false, error: 'Failed to delete product' }, 500);
+        }
+    }
+    /** Same `product_reviews` rows buyers see on the marketplace — scoped to this developer’s product. */
+    async listProductReviews(c) {
+        const jwtUser = assertDeveloper(c);
+        if (!jwtUser)
+            return c.json({ success: false, error: 'Unauthorized' }, 401);
+        const parsedId = ProductIdParamSchema.safeParse({ id: c.req.param('id') });
+        if (!parsedId.success) {
+            return c.json({ success: false, error: 'Invalid product ID' }, 400);
+        }
+        const productId = parsedId.data.id;
+        try {
+            const [owned] = await db
+                .select({ id: developerProducts.id })
+                .from(developerProducts)
+                .where(and(eq(developerProducts.id, productId), eq(developerProducts.developerId, jwtUser.id)))
+                .limit(1);
+            if (!owned)
+                return c.json({ success: false, error: 'Product not found' }, 404);
+            const rows = await db
+                .select({
+                id: productReviews.id,
+                rating: productReviews.rating,
+                comment: productReviews.comment,
+                developerReply: productReviews.developerReply,
+                developerRepliedAt: productReviews.developerRepliedAt,
+                createdAt: productReviews.createdAt,
+                userName: clients.name,
+                companyName: clients.companyName,
+            })
+                .from(productReviews)
+                .innerJoin(clients, eq(productReviews.clientId, clients.id))
+                .where(eq(productReviews.productId, productId))
+                .orderBy(desc(productReviews.createdAt));
+            const [{ avgRating, totalReviews }] = await db
+                .select({
+                avgRating: avg(productReviews.rating),
+                totalReviews: count(productReviews.id),
+            })
+                .from(productReviews)
+                .where(eq(productReviews.productId, productId));
+            const reviews = rows.map((r) => ({
+                id: r.id,
+                user: r.userName,
+                role: r.companyName || 'Verified user',
+                rating: r.rating,
+                comment: r.comment,
+                createdAt: r.createdAt,
+                developerReply: r.developerReply,
+                developerRepliedAt: r.developerRepliedAt,
+            }));
+            return c.json({
+                success: true,
+                data: {
+                    rating: avgRating ? Number(avgRating) : 0,
+                    reviewCount: Number(totalReviews ?? 0),
+                    reviews,
+                },
+            });
+        }
+        catch (error) {
+            console.error('[DeveloperProduct] listProductReviews error:', error);
+            return c.json({ success: false, error: 'Failed to fetch reviews' }, 500);
+        }
+    }
+    async upsertReviewReply(c) {
+        const jwtUser = assertDeveloper(c);
+        if (!jwtUser)
+            return c.json({ success: false, error: 'Unauthorized' }, 401);
+        const productId = Number(c.req.param('id'));
+        const reviewId = Number(c.req.param('reviewId'));
+        if (!Number.isInteger(productId) || productId < 1 || !Number.isInteger(reviewId) || reviewId < 1) {
+            return c.json({ success: false, error: 'Invalid IDs' }, 400);
+        }
+        const body = await c.req.json().catch(() => null);
+        const reply = typeof body?.reply === 'string' ? body.reply.trim() : '';
+        if (reply.length > 1000) {
+            return c.json({ success: false, error: 'Reply is too long (max 1000 chars)' }, 400);
+        }
+        try {
+            const [owned] = await db
+                .select({ id: developerProducts.id })
+                .from(developerProducts)
+                .where(and(eq(developerProducts.id, productId), eq(developerProducts.developerId, jwtUser.id)))
+                .limit(1);
+            if (!owned)
+                return c.json({ success: false, error: 'Product not found' }, 404);
+            const [review] = await db
+                .select({ id: productReviews.id, productId: productReviews.productId })
+                .from(productReviews)
+                .where(eq(productReviews.id, reviewId))
+                .limit(1);
+            if (!review || review.productId !== productId) {
+                return c.json({ success: false, error: 'Review not found' }, 404);
+            }
+            await db
+                .update(productReviews)
+                .set({
+                developerReply: reply.length ? reply : null,
+                developerRepliedAt: reply.length ? new Date() : null,
+                updatedAt: new Date(),
+            })
+                .where(eq(productReviews.id, reviewId));
+            return c.json({ success: true, message: reply.length ? 'Reply saved' : 'Reply removed' });
+        }
+        catch (error) {
+            console.error('[DeveloperProduct] upsertReviewReply error:', error);
+            return c.json({ success: false, error: 'Failed to save reply' }, 500);
+        }
+    }
+    async listCategories(c) {
+        const jwtUser = assertDeveloper(c);
+        if (!jwtUser)
+            return c.json({ success: false, error: 'Unauthorized' }, 401);
+        try {
+            const rows = await db
+                .select({ id: productCategories.id, name: productCategories.name })
+                .from(productCategories)
+                .orderBy(productCategories.name);
+            return c.json({ success: true, data: { categories: rows } });
+        }
+        catch (error) {
+            console.error('[DeveloperProduct] listCategories error:', error);
+            return c.json({ success: false, error: 'Failed to fetch categories' }, 500);
         }
     }
 }

@@ -32,9 +32,15 @@ export function getMissingForLiveListing(input) {
     const name = input.name?.trim() ?? '';
     if (name.length < 2)
         missing.push('Product name (at least 2 characters)');
+    const slug = input.slug?.trim().toLowerCase() ?? '';
+    if (slug.length < 2 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
+        missing.push('Listing slug (2+ characters; lowercase letters, numbers, hyphens only; must be unique on the marketplace)');
+    }
     const tagline = input.tagline?.trim() ?? '';
     if (tagline.length < 8)
         missing.push('Tagline (at least 8 characters)');
+    if (input.productCategoryId == null)
+        missing.push('Product category');
     const shortDesc = input.shortDescription?.trim() ?? '';
     if (shortDesc.length < 40)
         missing.push('Short description / overview (at least 40 characters)');

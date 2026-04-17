@@ -148,6 +148,7 @@ export const developerProducts = pgTable('developer_products', {
     projectId: varchar('project_id', { length: 120 }).notNull(),
     slug: varchar('slug', { length: 160 }).notNull().unique(),
     name: text('name').notNull(),
+    productCategoryId: integer('product_category_id'),
     tagline: text('tagline'),
     shortDescription: text('short_description'),
     problem: text('problem'),
@@ -200,7 +201,26 @@ export const developerProducts = pgTable('developer_products', {
     metaRequirements: text('meta_requirements'),
     trustVerifiedListing: boolean('trust_verified_listing').default(false),
     trustVerifiedByPlatform: boolean('trust_verified_by_platform').default(false),
+    /** Platform ops / admin only — not editable via developer product upsert. */
+    trustYourSaaSCertified: boolean('trust_yoursaas_certified').default(false),
     listingStatus: varchar('listing_status', { length: 20 }).default('draft'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+export const productCategories = pgTable('product_categories', {
+    id: serial('id').primaryKey(),
+    name: varchar('name', { length: 80 }).notNull().unique(),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+export const productReviews = pgTable('product_reviews', {
+    id: serial('id').primaryKey(),
+    productId: integer('product_id').references(() => developerProducts.id).notNull(),
+    clientId: integer('client_id').references(() => clients.id).notNull(),
+    rating: integer('rating').notNull(),
+    comment: text('comment').notNull(),
+    developerReply: text('developer_reply'),
+    developerRepliedAt: timestamp('developer_replied_at'),
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
 });
