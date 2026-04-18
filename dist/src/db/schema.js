@@ -70,6 +70,25 @@ export const developers = pgTable('developers', {
     planBillingCycle: varchar('plan_billing_cycle', { length: 20 }).default('monthly'), // monthly, yearly
     planStartDate: timestamp('plan_start_date'),
     planEndDate: timestamp('plan_end_date'),
+    /** Local / NEFT payouts — encrypted storage recommended in production */
+    payoutBankCountry: varchar('payout_bank_country', { length: 100 }),
+    payoutAccountHolderName: text('payout_account_holder_name'),
+    payoutBankName: text('payout_bank_name'),
+    /** IFSC (IN), routing (US), or SWIFT/BIC depending on country */
+    payoutRoutingCode: varchar('payout_routing_code', { length: 34 }),
+    payoutAccountNumber: text('payout_account_number'),
+    payoutAccountType: varchar('payout_account_type', { length: 24 }), // savings, current
+    payoutBankDetailsUpdatedAt: timestamp('payout_bank_details_updated_at'),
+    /** RazorpayX composite validation — contact/fund ids from last attempt */
+    payoutRazorpayContactId: varchar('payout_razorpay_contact_id', { length: 64 }),
+    payoutRazorpayFundAccountId: varchar('payout_razorpay_fund_account_id', { length: 64 }),
+    payoutBankValidationId: varchar('payout_bank_validation_id', { length: 64 }),
+    /** created | completed | failed (Razorpay fund_account.validation status) */
+    payoutBankValidationStatus: varchar('payout_bank_validation_status', { length: 24 }),
+    /** When completed: valid | invalid | … from validation_results.account_status */
+    payoutBankValidationAccountStatus: varchar('payout_bank_validation_account_status', { length: 32 }),
+    payoutBankValidationDetails: text('payout_bank_validation_details'),
+    payoutBankValidationAt: timestamp('payout_bank_validation_at'),
     // Timestamps
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),

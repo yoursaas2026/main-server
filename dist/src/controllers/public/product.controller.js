@@ -1,6 +1,7 @@
 import { and, avg, count, desc, eq } from 'drizzle-orm';
 import { db } from '../../db/index.js';
 import { clients, developerProducts, developers, productCategories, productReviews } from '../../db/schema.js';
+import { absoluteMediaUrl } from '../../services/stream-chat.service.js';
 function parseJson(value, fallback) {
     if (!value)
         return fallback;
@@ -15,6 +16,48 @@ function normalizeListingStatus(raw) {
     return (raw || '').toLowerCase() === 'live' ? 'live' : 'draft';
 }
 export class PublicProductController {
+    /** Minimal live listing for chat tag cards (`<YourSaaS>{id}</YourSaaS>`). */
+    async getCardById(c) {
+        const id = Number(c.req.param('id'));
+        if (!Number.isInteger(id) || id < 1) {
+            return c.json({ success: false, error: 'Invalid product id' }, 400);
+        }
+        try {
+            const [row] = await db
+                .select({
+                id: developerProducts.id,
+                slug: developerProducts.slug,
+                name: developerProducts.name,
+                tagline: developerProducts.tagline,
+                iconUrl: developerProducts.iconUrl,
+                projectId: developerProducts.projectId,
+                developerId: developerProducts.developerId,
+                listingStatus: developerProducts.listingStatus,
+            })
+                .from(developerProducts)
+                .where(eq(developerProducts.id, id))
+                .limit(1);
+            if (!row || normalizeListingStatus(row.listingStatus) !== 'live') {
+                return c.json({ success: false, error: 'Product not found' }, 404);
+            }
+            return c.json({
+                success: true,
+                data: {
+                    id: row.id,
+                    slug: row.slug,
+                    name: row.name,
+                    tagline: row.tagline ?? '',
+                    iconUrl: absoluteMediaUrl(row.iconUrl) ?? null,
+                    projectId: row.projectId,
+                    developerId: row.developerId,
+                },
+            });
+        }
+        catch (error) {
+            console.error('[PublicProduct] getCardById error:', error);
+            return c.json({ success: false, error: 'Failed to fetch product' }, 500);
+        }
+    }
     async resolveLiveProduct(slug) {
         const [row] = await db
             .select({ id: developerProducts.id, slug: developerProducts.slug })
@@ -234,6 +277,7 @@ export class PublicProductController {
                 .where(eq(productReviews.productId, p.id));
             const product = {
                 id: p.id,
+                projectId: p.projectId,
                 slug: p.slug,
                 name: p.name,
                 productCategoryId: p.productCategoryId ?? null,

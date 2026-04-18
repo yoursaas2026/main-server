@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 import crypto from 'crypto';
 import { paymentService } from '../../services/payment.service.js';
 import { env } from '../../config/env.js';
+import { developerPayoutController } from './payout.controller.js';
 export class PaymentController {
     // ── Get Pricing Information ────────────────────────────────────────────────
     getPricing(c) {
@@ -157,6 +158,15 @@ export class PaymentController {
                     await db.update(developerPayments)
                         .set({ status: 'completed', paymentId: payment.id, completedAt: new Date() })
                         .where(eq(developerPayments.orderId, payment.order_id));
+                }
+            }
+            const validationEvents = new Set(['fund_account.validation.completed', 'fund_account.validation.failed']);
+            if (validationEvents.has(event.event)) {
+                const payload = event.payload;
+                const wrap = payload?.['fund_account.validation'];
+                const validationEntity = wrap?.entity;
+                if (validationEntity) {
+                    await developerPayoutController.applyValidationFromWebhookEntity(validationEntity);
                 }
             }
             return c.json({ status: 'ok' });

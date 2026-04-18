@@ -37,10 +37,12 @@ export const env = {
     // Security
     CORS_ORIGIN: process.env.CORS_ORIGIN ||
         'http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003',
-    // Razorpay
+    // Razorpay (Checkout + RazorpayX Account Validation use the same Key ID / Secret when X is on the account)
     RAZORPAY_KEY_ID: process.env.RAZORPAY_KEY_ID || '',
     RAZORPAY_KEY_SECRET: process.env.RAZORPAY_KEY_SECRET || '',
     RAZORPAY_WEBHOOK_SECRET: process.env.RAZORPAY_WEBHOOK_SECRET || '',
+    /** RazorpayX current account number used as `source_account_number` for bank validations (live mode; not available in test mode per Razorpay). */
+    RAZORPAYX_SOURCE_ACCOUNT_NUMBER: process.env.RAZORPAYX_SOURCE_ACCOUNT_NUMBER || '',
     // Pricing
     PRO_MONTHLY_PRICE: parseInt(process.env.PRO_MONTHLY_PRICE || '29'),
     PRO_YEARLY_PRICE: parseInt(process.env.PRO_YEARLY_PRICE || '279'),
