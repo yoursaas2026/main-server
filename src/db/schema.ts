@@ -81,6 +81,16 @@ export const developers = pgTable('developers', {
     planStartDate: timestamp('plan_start_date'),
     planEndDate: timestamp('plan_end_date'),
 
+    /** Local / NEFT payouts — encrypted storage recommended in production */
+    payoutBankCountry: varchar('payout_bank_country', { length: 100 }),
+    payoutAccountHolderName: text('payout_account_holder_name'),
+    payoutBankName: text('payout_bank_name'),
+    /** IFSC (IN), routing (US), or SWIFT/BIC depending on country */
+    payoutRoutingCode: varchar('payout_routing_code', { length: 34 }),
+    payoutAccountNumber: text('payout_account_number'),
+    payoutAccountType: varchar('payout_account_type', { length: 24 }), // savings, current
+    payoutBankDetailsUpdatedAt: timestamp('payout_bank_details_updated_at'),
+
     // Timestamps
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),

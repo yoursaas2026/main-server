@@ -134,6 +134,13 @@
       "when": 1776185875223,
       "tag": "0018_worried_firedrake",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1776509828344,
+      "tag": "0019_developer_payout_bank",
+      "breakpoints": true
     }
   ]
 }

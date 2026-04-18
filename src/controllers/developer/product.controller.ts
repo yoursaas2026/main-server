@@ -11,6 +11,12 @@ import {
 } from '../../types/developer-product.types.js';
 import { getMissingForLiveListing } from '../../utils/listing-publish-readiness.js';
 import {
+    countDeveloperLiveListings,
+    getDeveloperPlan,
+    liveListingLimitErrorMessage,
+    maxLiveListingsForPlan,
+} from '../../utils/developer-live-listing-limits.js';
+import {
     cleanupAllProductMediaForRow,
     cleanupAllProductMediaFromInput,
     cleanupReplacedProductMedia,
@@ -304,6 +310,26 @@ function withPublishReadiness(row: typeof developerProducts.$inferSelect) {
     };
 }
 
+async function assertDeveloperMayPublishLive(developerId: number, existingListingStatus: string | null | undefined) {
+    if (normalizeListingStatus(existingListingStatus) === 'live') {
+        return { ok: true as const };
+    }
+    const plan = await getDeveloperPlan(developerId);
+    const maxLive = maxLiveListingsForPlan(plan);
+    if (maxLive === null) return { ok: true as const };
+    const liveCount = await countDeveloperLiveListings(developerId);
+    if (liveCount >= maxLive) {
+        return {
+            ok: false as const,
+            plan,
+            maxLive,
+            liveCount,
+            error: liveListingLimitErrorMessage(plan, maxLive, liveCount),
+        };
+    }
+    return { ok: true as const };
+}
+
 export class DeveloperProductController {
     async create(c: Context) {
         const jwtUser = assertDeveloper(c);
@@ -332,6 +358,21 @@ export class DeveloperProductController {
                             details: missing,
                         },
                         400
+                    );
+                }
+                const slot = await assertDeveloperMayPublishLive(jwtUser.id, null);
+                if (!slot.ok) {
+                    cleanupAllProductMediaFromInput(input);
+                    return c.json(
+                        {
+                            success: false,
+                            error: slot.error,
+                            code: 'LIVE_LISTING_LIMIT',
+                            plan: slot.plan,
+                            maxLive: slot.maxLive,
+                            liveCount: slot.liveCount,
+                        },
+                        403
                     );
                 }
             }
@@ -585,6 +626,20 @@ export class DeveloperProductController {
                         400
                     );
                 }
+                const slot = await assertDeveloperMayPublishLive(jwtUser.id, existing.listingStatus);
+                if (!slot.ok) {
+                    return c.json(
+                        {
+                            success: false,
+                            error: slot.error,
+                            code: 'LIVE_LISTING_LIMIT',
+                            plan: slot.plan,
+                            maxLive: slot.maxLive,
+                            liveCount: slot.liveCount,
+                        },
+                        403
+                    );
+                }
             }
 
             const [updated] = await db
@@ -782,6 +837,24 @@ export class DeveloperProductController {
         } catch (error) {
             console.error('[DeveloperProduct] listCategories error:', error);
             return c.json({ success: false, error: 'Failed to fetch categories' }, 500);
+        }
+    }
+
+    /** Plan + how many live listings the account already has (for publish UI). */
+    async getLiveLimits(c: Context) {
+        const jwtUser = assertDeveloper(c);
+        if (!jwtUser) return c.json({ success: false, error: 'Unauthorized' }, 401);
+        try {
+            const plan = await getDeveloperPlan(jwtUser.id);
+            const maxLive = maxLiveListingsForPlan(plan);
+            const liveCount = await countDeveloperLiveListings(jwtUser.id);
+            return c.json({
+                success: true,
+                data: { plan, maxLive, liveCount },
+            });
+        } catch (error) {
+            console.error('[DeveloperProduct] getLiveLimits error:', error);
+            return c.json({ success: false, error: 'Failed to fetch live listing limits' }, 500);
         }
     }
 }
