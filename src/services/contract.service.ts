@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, lte } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import {
     contractAmendments,
@@ -11,6 +11,7 @@ import {
 } from '../db/schema.js';
 import { env } from '../config/env.js';
 import { paymentService } from './payment.service.js';
+import { contractSettlementService } from './contract-settlement.service.js';
 import { notifyContractParties } from './contract-stream.service.js';
 
 export const ContractStatus = {
@@ -449,6 +450,23 @@ export const contractService = {
         await this.settleCompleted(contractId, 'auto_complete_client_inactive');
     },
 
+    /** Background job: auto-complete all contracts past client decision deadline. */
+    async runDueAutoCompletions(): Promise<number> {
+        const rows = await db
+            .select()
+            .from(contracts)
+            .where(
+                and(eq(contracts.status, ContractStatus.SUBMITTED), lte(contracts.clientDecisionDeadlineAt, new Date()))
+            );
+        let count = 0;
+        for (const row of rows) {
+            if (!row.clientDecisionDeadlineAt) continue;
+            await this.maybeAutoCompleteClientDeadline(row.id);
+            count++;
+        }
+        return count;
+    },
+
     async settleCompleted(contractId: number, reason: string = 'client_accepted') {
         const [c] = await db.select().from(contracts).where(eq(contracts.id, contractId)).limit(1);
         if (!c) return;
@@ -477,7 +495,6 @@ export const contractService = {
                         platformCommissionPercent: platformPct,
                     },
                     nonRefundableFeePaise: c.nonRefundableFeePaise,
-                    note: 'Ledger only — configure RazorpayX payouts to move developer share to seller bank.',
                 }),
                 updatedAt: new Date(),
             })
@@ -490,6 +507,12 @@ export const contractService = {
             contractId,
             `🎉 Contract #${c.publicId.slice(0, 8)} marked **completed**. From escrow: developer ₹${(devShare / 100).toFixed(2)} (${100 - platformPct}%), platform ₹${(platShare / 100).toFixed(2)} (${platformPct}%).`
         );
+
+        await contractSettlementService.executeAfterLedgerUpdate(contractId, {
+            refundClientPaise: 0,
+            releaseDeveloperPaise: devShare,
+            reason,
+        });
     },
 
     async proposeAmendment(input: {
@@ -687,6 +710,12 @@ export const contractService = {
 
         await logEvent(c.id, c.status, ContractStatus.COMPLETED, 'admin', input.adminId, { disputeId: d.id });
         await notify(c.id, `⚖️ Dispute resolved by platform for #${c.publicId.slice(0, 8)}. See contract for settlement breakdown.`);
+
+        await contractSettlementService.executeAfterLedgerUpdate(c.id, {
+            refundClientPaise: input.refundClientPaise,
+            releaseDeveloperPaise: input.releaseDeveloperPaise,
+            reason: 'dispute_resolution',
+        });
     },
 
     async listAmendments(contractId: number) {

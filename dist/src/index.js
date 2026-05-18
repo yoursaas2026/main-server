@@ -22,6 +22,7 @@ import userChatRoutes from './routes/user/chat.routes.js';
 import userContractRoutes from './routes/user/contract.routes.js';
 import developerContractRoutes from './routes/developer/contract.routes.js';
 import adminContractRoutes from './routes/admin/contract.routes.js';
+import { startContractJobs } from './jobs/contract-jobs.js';
 const app = new Hono();
 // Middleware
 app.use('*', logger());
@@ -119,4 +120,5 @@ serve({
     fetch: app.fetch,
     port,
 });
+startContractJobs();
 export default app;

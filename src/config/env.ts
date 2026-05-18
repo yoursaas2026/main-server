@@ -78,4 +78,11 @@ export const env = {
     ),
     /** Days client has to accept / dispute after developer submits (auto-complete if silent). */
     CONTRACT_CLIENT_DECISION_DAYS: parseInt(process.env.CONTRACT_CLIENT_DECISION_DAYS || '14', 10),
+    /** When true, attempt Razorpay refunds + RazorpayX payouts after contract settlement (requires keys + validated developer bank). */
+    CONTRACT_AUTO_SETTLEMENT_ENABLED: process.env.CONTRACT_AUTO_SETTLEMENT_ENABLED === 'true',
+    /** Background job interval for auto-completing submitted contracts past client deadline (ms). */
+    CONTRACT_AUTO_COMPLETE_INTERVAL_MS: Math.max(
+        60_000,
+        parseInt(process.env.CONTRACT_AUTO_COMPLETE_INTERVAL_MS || '300000', 10)
+    ),
 };

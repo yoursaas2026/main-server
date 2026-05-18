@@ -43,5 +43,15 @@ export const paymentService = {
             .digest('hex');
 
         return expectedSignature === signature;
-    }
+    },
+
+    /** Partial or full refund on a captured payment (amount in paise). */
+    async refundPayment(paymentId: string, amountPaise: number, notes?: Record<string, string>) {
+        if (!paymentId) throw new Error('Payment id required for refund');
+        if (amountPaise <= 0) throw new Error('Refund amount must be positive');
+        return await razorpay.payments.refund(paymentId, {
+            amount: amountPaise,
+            notes: notes ?? {},
+        });
+    },
 };

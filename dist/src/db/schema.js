@@ -268,6 +268,9 @@ export const contracts = pgTable('contracts', {
     developerReleasedPaise: integer('developer_released_paise'),
     platformReleasedPaise: integer('platform_released_paise'),
     payoutNotes: text('payout_notes'),
+    /** pending | executed | partial | failed | skipped */
+    settlementStatus: varchar('settlement_status', { length: 24 }),
+    settlementMetaJson: text('settlement_meta_json'),
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
 });
@@ -317,6 +320,8 @@ export const contractPayments = pgTable('contract_payments', {
     purpose: varchar('purpose', { length: 32 }).notNull(),
     orderId: varchar('order_id', { length: 100 }),
     paymentId: varchar('payment_id', { length: 100 }),
+    refundId: varchar('refund_id', { length: 100 }),
+    refundAmountPaise: integer('refund_amount_paise').default(0),
     amountPaise: integer('amount_paise').notNull(),
     status: varchar('status', { length: 20 }).default('created'),
     createdAt: timestamp('created_at').defaultNow(),

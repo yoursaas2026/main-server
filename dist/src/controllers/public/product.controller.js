@@ -389,8 +389,11 @@ export class PublicProductController {
             if (!row || normalizeListingStatus(row.listingStatus) !== 'live') {
                 return c.json({ success: false, error: 'Product not found' }, 404);
             }
-            const shotList = parseJson(row.screenshotUrls, []);
-            const firstShot = shotList.find((s) => typeof s === 'string' && s.trim().length > 0);
+            const rawShots = parseJson(row.screenshotUrls, []);
+            const shotList = Array.isArray(rawShots)
+                ? rawShots.filter((s) => typeof s === 'string' && s.trim().length > 0)
+                : [];
+            const firstShot = shotList[0];
             const coverImageUrl = firstShot ? absoluteMediaUrl(firstShot) : undefined;
             const tiers = parseJson(row.customizationTiers, []);
             const platformPct = env.CONTRACT_PLATFORM_COMMISSION_PERCENT;
