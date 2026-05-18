@@ -5,6 +5,9 @@ import { authMiddleware, optionalAuthMiddleware } from '../../middleware/auth.mi
 
 const publicProductRoutes = new Hono<BlankEnv, BlankSchema, '/api/public/products'>();
 
+publicProductRoutes.get('/by-id/:id/contract-pricing', optionalAuthMiddleware, (c) =>
+    publicProductController.getContractPricingById(c)
+);
 publicProductRoutes.get('/card/:id', optionalAuthMiddleware, (c) => publicProductController.getCardById(c));
 publicProductRoutes.get('/:slug', optionalAuthMiddleware, (c) => publicProductController.getBySlug(c));
 publicProductRoutes.get('/:slug/reviews', optionalAuthMiddleware, (c) => publicProductController.listReviews(c));

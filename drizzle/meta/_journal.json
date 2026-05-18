@@ -148,6 +148,13 @@
       "when": 1776511790763,
       "tag": "0020_developer_payout_bank_validation",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1776515531611,
+      "tag": "0021_marketplace_contracts",
+      "breakpoints": true
     }
   ]
 }

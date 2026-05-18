@@ -18,6 +18,19 @@ export const paymentService = {
         };
         return await razorpay.orders.create(options);
     },
+    /** Marketplace contract escrow — amount in paise (INR). */
+    async createContractOrder(amountPaise, notes) {
+        const options = {
+            amount: amountPaise,
+            currency: 'INR',
+            receipt: `ctr_${Date.now()}`,
+            notes: {
+                ...notes,
+                entityType: 'marketplace_contract',
+            },
+        };
+        return await razorpay.orders.create(options);
+    },
     verifyWebhookSignature(body, signature) {
         const expectedSignature = crypto
             .createHmac('sha256', env.RAZORPAY_WEBHOOK_SECRET)

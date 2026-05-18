@@ -3,6 +3,11 @@ import { and, avg, count, desc, eq } from 'drizzle-orm';
 import { db } from '../../db/index.js';
 import { clients, developerProducts, developers, productCategories, productReviews } from '../../db/schema.js';
 import { absoluteMediaUrl } from '../../services/stream-chat.service.js';
+import { env } from '../../config/env.js';
+import {
+    CLIENT_NON_REFUNDABLE_FEE_BPS,
+    contractCheckoutBreakdown,
+} from '../../services/contract.service.js';
 
 function parseJson<T>(value: string | null, fallback: T): T {
     if (!value) return fallback;
@@ -372,6 +377,90 @@ export class PublicProductController {
         } catch (error) {
             console.error('[PublicProduct] getBySlug error:', error);
             return c.json({ success: false, error: 'Failed to fetch product' }, 500);
+        }
+    }
+
+    /** Package tiers + INR prices from the listing (for contract checkout UI). Live products only. */
+    async getContractPricingById(c: Context) {
+        const id = Number(c.req.param('id'));
+        if (!Number.isInteger(id) || id < 1) {
+            return c.json({ success: false, error: 'Invalid product id' }, 400);
+        }
+        try {
+            const [row] = await db
+                .select({
+                    id: developerProducts.id,
+                    name: developerProducts.name,
+                    slug: developerProducts.slug,
+                    tagline: developerProducts.tagline,
+                    iconUrl: developerProducts.iconUrl,
+                    screenshotUrls: developerProducts.screenshotUrls,
+                    customizationTiers: developerProducts.customizationTiers,
+                    listingStatus: developerProducts.listingStatus,
+                    trustVerifiedByPlatform: developerProducts.trustVerifiedByPlatform,
+                    sellerName: developers.name,
+                    sellerCompany: developers.company,
+                    sellerAvatar: developers.profilePicture,
+                })
+                .from(developerProducts)
+                .innerJoin(developers, eq(developerProducts.developerId, developers.id))
+                .where(eq(developerProducts.id, id))
+                .limit(1);
+
+            if (!row || normalizeListingStatus(row.listingStatus) !== 'live') {
+                return c.json({ success: false, error: 'Product not found' }, 404);
+            }
+
+            const rawShots = parseJson<unknown>(row.screenshotUrls, []);
+            const shotList = Array.isArray(rawShots)
+                ? rawShots.filter((s): s is string => typeof s === 'string' && s.trim().length > 0)
+                : [];
+            const firstShot = shotList[0];
+            const coverImageUrl = firstShot ? absoluteMediaUrl(firstShot) : undefined;
+
+            const tiers = parseJson(row.customizationTiers, [] as { id?: string; fixedPriceInr?: number | null }[]);
+            const platformPct = env.CONTRACT_PLATFORM_COMMISSION_PERCENT;
+            const tierBreakdowns: Record<string, ReturnType<typeof contractCheckoutBreakdown>> = {};
+            for (const t of tiers) {
+                const tid = String(t.id || '').toLowerCase();
+                if (!tid) continue;
+                if (t.fixedPriceInr != null && t.fixedPriceInr > 0) {
+                    tierBreakdowns[tid] = contractCheckoutBreakdown(Math.round(t.fixedPriceInr * 100), platformPct);
+                }
+            }
+
+            return c.json({
+                success: true,
+                data: {
+                    productId: row.id,
+                    name: row.name,
+                    slug: row.slug,
+                    listingSummary: {
+                        name: row.name,
+                        slug: row.slug,
+                        tagline: row.tagline?.trim() || null,
+                        iconUrl: absoluteMediaUrl(row.iconUrl) ?? null,
+                        coverImageUrl: coverImageUrl ?? null,
+                        trustVerifiedByPlatform: Boolean(row.trustVerifiedByPlatform),
+                        seller: {
+                            displayName: row.sellerName,
+                            company: row.sellerCompany?.trim() || null,
+                            avatarUrl: absoluteMediaUrl(row.sellerAvatar) ?? null,
+                        },
+                    },
+                    customizationTiers: tiers,
+                    feePolicy: {
+                        nonRefundableFeeBps: CLIENT_NON_REFUNDABLE_FEE_BPS,
+                        nonRefundableFeePercent: CLIENT_NON_REFUNDABLE_FEE_BPS / 100,
+                    },
+                    platformCommissionPercent: platformPct,
+                    developerEscrowSplitPercent: 100 - platformPct,
+                    tierBreakdowns,
+                },
+            });
+        } catch (error) {
+            console.error('[PublicProduct] getContractPricingById error:', error);
+            return c.json({ success: false, error: 'Failed to fetch pricing' }, 500);
         }
     }
 }

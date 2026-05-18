@@ -19,6 +19,9 @@ import { developerProfileRoutes } from './routes/developer/profile.routes.js';
 import publicProductRoutes from './routes/public/product.routes.js';
 import userAuthRoutes from './routes/user/auth.routes.js';
 import userChatRoutes from './routes/user/chat.routes.js';
+import userContractRoutes from './routes/user/contract.routes.js';
+import developerContractRoutes from './routes/developer/contract.routes.js';
+import adminContractRoutes from './routes/admin/contract.routes.js';
 const app = new Hono();
 // Middleware
 app.use('*', logger());
@@ -78,6 +81,9 @@ app.route('/api/developer/chat', developerChatRoutes);
 app.route('/api/public/products', publicProductRoutes);
 app.route('/api/user/auth', userAuthRoutes);
 app.route('/api/user/chat', userChatRoutes);
+app.route('/api/user/contracts', userContractRoutes);
+app.route('/api/developer/contracts', developerContractRoutes);
+app.route('/api/admin/contracts', adminContractRoutes);
 // 404 handler
 app.notFound((c) => {
     return c.json({

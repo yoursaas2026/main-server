@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import { paymentService } from '../../services/payment.service.js';
 import { env } from '../../config/env.js';
 import { developerPayoutController } from './payout.controller.js';
+import { contractService } from '../../services/contract.service.js';
 export class PaymentController {
     // ── Get Pricing Information ────────────────────────────────────────────────
     getPricing(c) {
@@ -138,7 +139,14 @@ export class PaymentController {
             if (event.event === 'payment.captured') {
                 const payment = event.payload.payment.entity;
                 const { notes } = payment;
-                if (notes && notes.developerId && notes.plan && notes.billingCycle) {
+                if (notes && notes.entityType === 'marketplace_contract' && notes.contractId) {
+                    await contractService.onEscrowPaymentCaptured({
+                        orderId: payment.order_id,
+                        paymentId: payment.id,
+                        amount: typeof payment.amount === 'number' ? payment.amount : parseInt(String(payment.amount), 10),
+                    });
+                }
+                else if (notes && notes.developerId && notes.plan && notes.billingCycle) {
                     const devId = parseInt(notes.developerId, 10);
                     const { startDate, endDate } = (() => {
                         const s = new Date();

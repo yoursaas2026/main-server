@@ -67,4 +67,15 @@ export const env = {
     STREAM_API_SECRET: process.env.STREAM_API_SECRET || '',
     /** Public origin for this API (used to build absolute avatar URLs for Stream user profiles) */
     API_PUBLIC_ORIGIN: (process.env.API_PUBLIC_ORIGIN || `http://localhost:${process.env.PORT || '3000'}`).replace(/\/$/, ''),
+
+    /**
+     * Marketplace contracts — after successful completion, **YourSaaS platform commission** as a whole percent of **escrow**
+     * (e.g. 20 = 20% to platform, 80% to developer). Integer 0–100. Tier prices still come from each listing, not env.
+     */
+    CONTRACT_PLATFORM_COMMISSION_PERCENT: Math.min(
+        100,
+        Math.max(0, parseInt(process.env.CONTRACT_PLATFORM_COMMISSION_PERCENT || '20', 10))
+    ),
+    /** Days client has to accept / dispute after developer submits (auto-complete if silent). */
+    CONTRACT_CLIENT_DECISION_DAYS: parseInt(process.env.CONTRACT_CLIENT_DECISION_DAYS || '14', 10),
 };

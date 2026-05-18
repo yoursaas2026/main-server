@@ -254,13 +254,7 @@ export class DeveloperPayoutController {
             await db
                 .update(developers)
                 .set({
-                payoutBankValidationStatus: mapped.payoutBankValidationStatus,
-                payoutBankValidationAccountStatus: mapped.payoutBankValidationAccountStatus,
-                payoutBankValidationDetails: mapped.payoutBankValidationDetails,
-                payoutBankValidationAt: mapped.payoutBankValidationAt,
-                payoutRazorpayFundAccountId: mapped.payoutRazorpayFundAccountId ?? undefined,
-                payoutRazorpayContactId: mapped.payoutRazorpayContactId ?? undefined,
-                updatedAt: new Date(),
+                ...mapped,
             })
                 .where(and(eq(developers.id, user.id), eq(developers.payoutBankValidationId, entity.id)));
             const bankVerified = mapped.payoutBankValidationStatus === 'completed' &&
