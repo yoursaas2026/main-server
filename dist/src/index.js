@@ -5,7 +5,7 @@ import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { db } from './db/index.js';
 import { sql } from 'drizzle-orm';
-import { env } from './config/env.js';
+import { env, resolveCorsOrigin } from './config/env.js';
 import adminAuthRoutes from './routes/admin/auth.routes.js';
 import adminDeveloperRoutes from './routes/admin/developer.routes.js';
 import adminProductRoutes from './routes/admin/product.routes.js';
@@ -27,7 +27,7 @@ const app = new Hono();
 // Middleware
 app.use('*', logger());
 app.use('*', cors({
-    origin: env.CORS_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean),
+    origin: (origin) => resolveCorsOrigin(origin),
     credentials: true,
     allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'Authorization'],

@@ -29,4 +29,4 @@ lerna-debug.log*
 .vercel
 
 # Local uploads (developer profiles, KYC, product icons/screenshots)
-uploads/
+# uploads/
