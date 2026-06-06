@@ -166,6 +166,10 @@ export const admins = pgTable('admins', {
     // Audit Information
     createdBy: integer('created_by'), // admin ID who created this admin
 
+    // Password reset
+    resetPasswordToken: text('reset_password_token'),
+    resetPasswordExpiry: timestamp('reset_password_expiry'),
+
     // Timestamps
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),

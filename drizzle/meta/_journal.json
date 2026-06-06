@@ -162,6 +162,13 @@
       "when": 1779131166582,
       "tag": "0022_absurd_archangel",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1780747064227,
+      "tag": "0023_nebulous_solo",
+      "breakpoints": true
     }
   ]
 }

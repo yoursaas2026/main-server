@@ -7,6 +7,8 @@ const adminAuthRoutes = new Hono<BlankEnv, BlankSchema, '/api/admin/auth'>();
 
 // ── Public Routes ─────────────────────────────────────────────────────────────
 adminAuthRoutes.post('/login', (c) => adminAuthController.login(c));
+adminAuthRoutes.post('/forgot-password', (c) => adminAuthController.forgotPassword(c));
+adminAuthRoutes.post('/reset-password', (c) => adminAuthController.resetPassword(c));
 
 // ── Protected ─────────────────────────────────────────────────────────────────
 adminAuthRoutes.get('/me', authMiddleware, (c) => adminAuthController.getCurrentUser(c));
