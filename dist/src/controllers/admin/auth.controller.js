@@ -2,7 +2,10 @@ import { db } from '../../db/index.js';
 import { admins } from '../../db/schema.js';
 import { eq } from 'drizzle-orm';
 import { generateToken } from '../../utils/jwt.js';
-import { hashPassword, comparePassword } from '../../utils/password.js';
+import { hashPassword, comparePassword, generateResetToken } from '../../utils/password.js';
+import { ForgotPasswordSchema, ResetPasswordSchema } from '../../types/auth.types.js';
+import { notificationService } from '../../services/notification.service.js';
+import { env } from '../../config/env.js';
 export class AdminAuthController {
     // ── Email/Password Login ──────────────────────────────────────────────────
     async login(c) {
@@ -42,6 +45,78 @@ export class AdminAuthController {
         catch (error) {
             console.error('[AdminAuth] login error:', error);
             return c.json({ success: false, error: 'Login failed' }, 500);
+        }
+    }
+    // ── Forgot Password ───────────────────────────────────────────────────────
+    async forgotPassword(c) {
+        const body = await c.req.json().catch(() => null);
+        const parsed = ForgotPasswordSchema.safeParse(body);
+        if (!parsed.success) {
+            return c.json({ success: false, error: parsed.error.issues[0].message }, 400);
+        }
+        const { email } = parsed.data;
+        const safeResponse = {
+            success: true,
+            message: 'If that email is registered, a reset link has been sent',
+        };
+        try {
+            const [admin] = await db
+                .select({ id: admins.id, email: admins.email, name: admins.name, status: admins.status })
+                .from(admins)
+                .where(eq(admins.email, email))
+                .limit(1);
+            if (!admin || admin.status !== 'active')
+                return c.json(safeResponse);
+            const resetToken = generateResetToken();
+            const resetExpiry = new Date(Date.now() + 3_600_000);
+            await db
+                .update(admins)
+                .set({ resetPasswordToken: resetToken, resetPasswordExpiry: resetExpiry })
+                .where(eq(admins.id, admin.id));
+            notificationService.sendPasswordResetEmail(admin.email, admin.name, resetToken, env.ADMIN_PORTAL_URL);
+            return c.json(safeResponse);
+        }
+        catch (error) {
+            console.error('[AdminAuth] forgotPassword error:', error);
+            return c.json({ success: false, error: 'Failed to process password reset' }, 500);
+        }
+    }
+    // ── Reset Password ────────────────────────────────────────────────────────
+    async resetPassword(c) {
+        const body = await c.req.json().catch(() => null);
+        const parsed = ResetPasswordSchema.safeParse(body);
+        if (!parsed.success) {
+            return c.json({ success: false, error: parsed.error.issues[0].message }, 400);
+        }
+        const { token, newPassword } = parsed.data;
+        try {
+            const [admin] = await db
+                .select({
+                id: admins.id,
+                resetPasswordToken: admins.resetPasswordToken,
+                resetPasswordExpiry: admins.resetPasswordExpiry,
+            })
+                .from(admins)
+                .where(eq(admins.resetPasswordToken, token))
+                .limit(1);
+            if (!admin || !admin.resetPasswordExpiry || admin.resetPasswordExpiry < new Date()) {
+                return c.json({ success: false, error: 'Invalid or expired reset token' }, 400);
+            }
+            const hashedPassword = await hashPassword(newPassword);
+            await db
+                .update(admins)
+                .set({
+                password: hashedPassword,
+                resetPasswordToken: null,
+                resetPasswordExpiry: null,
+                updatedAt: new Date(),
+            })
+                .where(eq(admins.id, admin.id));
+            return c.json({ success: true, message: 'Password reset successful' });
+        }
+        catch (error) {
+            console.error('[AdminAuth] resetPassword error:', error);
+            return c.json({ success: false, error: 'Failed to reset password' }, 500);
         }
     }
     // ── Create Admin (Protected) ──────────────────────────────────────────────

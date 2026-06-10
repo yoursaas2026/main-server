@@ -3,6 +3,7 @@ import { developers } from '../../db/schema.js';
 import { eq } from 'drizzle-orm';
 import fs from 'fs';
 import path from 'path';
+import { parseExperienceYears, parseServicesOffered, serializeServicesOffered, } from '../../utils/developer-profile-parse.js';
 export class DeveloperProfileController {
     // Get profile
     async getProfile(c) {
@@ -69,8 +70,11 @@ export class DeveloperProfileController {
                 updateData.bio = formData.get('bio');
             if (formData.has('skills'))
                 updateData.skills = formData.get('skills'); // Expecting stringified JSON array
-            if (formData.has('experience'))
-                updateData.experience = parseInt(formData.get('experience'), 10);
+            if (formData.has('experience')) {
+                const years = parseExperienceYears(formData.get('experience'));
+                if (years !== null)
+                    updateData.experience = years;
+            }
             if (formData.has('portfolioUrl'))
                 updateData.portfolioUrl = formData.get('portfolioUrl');
             if (formData.has('githubUrl'))
@@ -87,8 +91,10 @@ export class DeveloperProfileController {
                 updateData.company = formData.get('company');
             if (formData.has('hourlyRate'))
                 updateData.hourlyRate = parseInt(formData.get('hourlyRate'), 10);
-            if (formData.has('servicesOffered'))
-                updateData.servicesOffered = formData.get('servicesOffered');
+            if (formData.has('servicesOffered')) {
+                const raw = formData.get('servicesOffered');
+                updateData.servicesOffered = serializeServicesOffered(parseServicesOffered(raw));
+            }
             if (formData.has('pastExperiences'))
                 updateData.pastExperiences = formData.get('pastExperiences');
             if (formData.has('portfolioProjects'))
@@ -132,6 +138,7 @@ export class DeveloperProfileController {
             if (Object.keys(updateData).length === 0) {
                 return c.json({ success: false, error: 'No data provided to update' }, 400);
             }
+            updateData.updatedAt = new Date();
             const [updated] = await db
                 .update(developers)
                 .set(updateData)

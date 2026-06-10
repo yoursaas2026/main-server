@@ -4,6 +4,11 @@ import { developers } from '../../db/schema.js';
 import { eq } from 'drizzle-orm';
 import fs from 'fs';
 import path from 'path';
+import {
+    parseExperienceYears,
+    parseServicesOffered,
+    serializeServicesOffered,
+} from '../../utils/developer-profile-parse.js';
 
 export class DeveloperProfileController {
     // Get profile
@@ -72,7 +77,10 @@ export class DeveloperProfileController {
             if (formData.has('phone')) updateData.phone = formData.get('phone') as string;
             if (formData.has('bio')) updateData.bio = formData.get('bio') as string;
             if (formData.has('skills')) updateData.skills = formData.get('skills') as string; // Expecting stringified JSON array
-            if (formData.has('experience')) updateData.experience = parseInt(formData.get('experience') as string, 10);
+            if (formData.has('experience')) {
+                const years = parseExperienceYears(formData.get('experience') as string);
+                if (years !== null) updateData.experience = years;
+            }
             if (formData.has('portfolioUrl')) updateData.portfolioUrl = formData.get('portfolioUrl') as string;
             if (formData.has('githubUrl')) updateData.githubUrl = formData.get('githubUrl') as string;
             if (formData.has('linkedinUrl')) updateData.linkedinUrl = formData.get('linkedinUrl') as string;
@@ -82,7 +90,10 @@ export class DeveloperProfileController {
             if (formData.has('location')) updateData.location = formData.get('location') as string;
             if (formData.has('company')) updateData.company = formData.get('company') as string;
             if (formData.has('hourlyRate')) updateData.hourlyRate = parseInt(formData.get('hourlyRate') as string, 10);
-            if (formData.has('servicesOffered')) updateData.servicesOffered = formData.get('servicesOffered') as string;
+            if (formData.has('servicesOffered')) {
+                const raw = formData.get('servicesOffered') as string;
+                updateData.servicesOffered = serializeServicesOffered(parseServicesOffered(raw));
+            }
             if (formData.has('pastExperiences')) updateData.pastExperiences = formData.get('pastExperiences') as string;
             if (formData.has('portfolioProjects')) updateData.portfolioProjects = formData.get('portfolioProjects') as string;
             if (formData.has('openToOpenSource')) updateData.openToOpenSource = formData.get('openToOpenSource') === 'true';
@@ -128,6 +139,8 @@ export class DeveloperProfileController {
                 return c.json({ success: false, error: 'No data provided to update' }, 400);
             }
             
+            updateData.updatedAt = new Date();
+
             const [updated] = await db
                 .update(developers)
                 .set(updateData)

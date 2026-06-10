@@ -5,7 +5,7 @@ import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { db } from './db/index.js';
 import { sql } from 'drizzle-orm';
-import { env, resolveCorsOrigin } from './config/env.js';
+import { env } from './config/env.js';
 import adminAuthRoutes from './routes/admin/auth.routes.js';
 import adminDeveloperRoutes from './routes/admin/developer.routes.js';
 import adminProductRoutes from './routes/admin/product.routes.js';
@@ -17,6 +17,8 @@ import developerChatRoutes from './routes/developer/chat.routes.js';
 import developerProductRoutes from './routes/developer/product.routes.js';
 import { developerProfileRoutes } from './routes/developer/profile.routes.js';
 import publicProductRoutes from './routes/public/product.routes.js';
+import publicNewsletterRoutes from './routes/public/newsletter.routes.js';
+import publicDeveloperRoutes from './routes/public/developer.routes.js';
 import userAuthRoutes from './routes/user/auth.routes.js';
 import userChatRoutes from './routes/user/chat.routes.js';
 import userContractRoutes from './routes/user/contract.routes.js';
@@ -27,7 +29,7 @@ const app = new Hono();
 // Middleware
 app.use('*', logger());
 app.use('*', cors({
-    origin: (origin) => resolveCorsOrigin(origin),
+    origin: env.CORS_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean),
     credentials: true,
     allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'Authorization'],
@@ -80,6 +82,8 @@ app.route('/api/developer/products', developerProductRoutes);
 app.route('/api/developer/profile', developerProfileRoutes);
 app.route('/api/developer/chat', developerChatRoutes);
 app.route('/api/public/products', publicProductRoutes);
+app.route('/api/public/newsletter', publicNewsletterRoutes);
+app.route('/api/public/developers', publicDeveloperRoutes);
 app.route('/api/user/auth', userAuthRoutes);
 app.route('/api/user/chat', userChatRoutes);
 app.route('/api/user/contracts', userContractRoutes);

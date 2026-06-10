@@ -192,5 +192,42 @@ class BrevoEmailService {
             htmlContent,
         });
     }
+    async subscribeToNewsletter(input) {
+        if (!this.apiKey) {
+            console.error('[Brevo] Newsletter subscribe skipped — BREVO_API_KEY missing');
+            return false;
+        }
+        try {
+            const payload = {
+                email: input.email,
+                attributes: {
+                    FIRSTNAME: input.firstName,
+                    LASTNAME: input.lastName,
+                },
+                updateEnabled: true,
+            };
+            const listId = env.BREVO_NEWSLETTER_LIST_ID;
+            if (listId) {
+                payload.listIds = [listId];
+            }
+            const response = await axios.post('https://api.brevo.com/v3/contacts', payload, {
+                headers: {
+                    'api-key': this.apiKey,
+                    'Content-Type': 'application/json',
+                },
+            });
+            return response.status === 201 || response.status === 204;
+        }
+        catch (error) {
+            if (axios.isAxiosError(error) && error.response?.status === 400) {
+                const message = String(error.response.data?.message ?? '');
+                if (message.toLowerCase().includes('already exist')) {
+                    return true;
+                }
+            }
+            console.error('Brevo newsletter subscribe error:', error);
+            return false;
+        }
+    }
 }
 export const emailService = new BrevoEmailService();

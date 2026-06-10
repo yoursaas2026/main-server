@@ -30,15 +30,17 @@ export const env = {
     BREVO_API_KEY: process.env.BREVO_API_KEY || '',
     BREVO_SENDER_EMAIL: process.env.BREVO_SENDER_EMAIL || 'noreply@yoursaas.com',
     BREVO_SENDER_NAME: process.env.BREVO_SENDER_NAME || 'YourSaaS',
+    /** Optional Brevo contact list ID for footer newsletter signups */
+    BREVO_NEWSLETTER_LIST_ID: process.env.BREVO_NEWSLETTER_LIST_ID
+        ? parseInt(process.env.BREVO_NEWSLETTER_LIST_ID, 10)
+        : undefined,
     // Frontend URLs
     DEVELOPER_PORTAL_URL: process.env.DEVELOPER_PORTAL_URL || 'http://localhost:3001',
     USER_PORTAL_URL: process.env.USER_PORTAL_URL || 'http://localhost:3002',
     ADMIN_PORTAL_URL: process.env.ADMIN_PORTAL_URL || 'http://localhost:3003',
-    // Security — comma-separated browser origins; portal URLs below are merged automatically in getCorsAllowedOrigins()
+    // Security
     CORS_ORIGIN: process.env.CORS_ORIGIN ||
         'http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003',
-    /** When true, allow any https origin on yoursaas.in and *.yoursaas.in (production convenience). */
-    CORS_ALLOW_YOURSAAS_SUBDOMAINS: process.env.CORS_ALLOW_YOURSAAS_SUBDOMAINS === 'true',
     // Razorpay (Checkout + RazorpayX Account Validation use the same Key ID / Secret when X is on the account)
     RAZORPAY_KEY_ID: process.env.RAZORPAY_KEY_ID || '',
     RAZORPAY_KEY_SECRET: process.env.RAZORPAY_KEY_SECRET || '',
@@ -67,37 +69,3 @@ export const env = {
     /** Background job interval for auto-completing submitted contracts past client deadline (ms). */
     CONTRACT_AUTO_COMPLETE_INTERVAL_MS: Math.max(60_000, parseInt(process.env.CONTRACT_AUTO_COMPLETE_INTERVAL_MS || '300000', 10)),
 };
-function normalizeOrigin(url) {
-    return url.trim().replace(/\/$/, '');
-}
-/** All explicit origins allowed for CORS (deduped). */
-export function getCorsAllowedOrigins() {
-    const fromList = env.CORS_ORIGIN.split(',').map(normalizeOrigin).filter(Boolean);
-    const portals = [env.USER_PORTAL_URL, env.DEVELOPER_PORTAL_URL, env.ADMIN_PORTAL_URL]
-        .map(normalizeOrigin)
-        .filter(Boolean);
-    return [...new Set([...fromList, ...portals])];
-}
-function isYoursaasProductionOrigin(origin) {
-    try {
-        const { protocol, hostname } = new URL(origin);
-        if (protocol !== 'https:')
-            return false;
-        return hostname === 'yoursaas.in' || hostname.endsWith('.yoursaas.in');
-    }
-    catch {
-        return false;
-    }
-}
-/** Hono cors `origin` callback — returns the origin if allowed, else null. */
-export function resolveCorsOrigin(requestOrigin) {
-    if (!requestOrigin)
-        return getCorsAllowedOrigins()[0] ?? null;
-    const allowed = getCorsAllowedOrigins();
-    if (allowed.includes(normalizeOrigin(requestOrigin)))
-        return requestOrigin;
-    if (env.CORS_ALLOW_YOURSAAS_SUBDOMAINS && isYoursaasProductionOrigin(requestOrigin)) {
-        return requestOrigin;
-    }
-    return null;
-}

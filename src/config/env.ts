@@ -38,6 +38,10 @@ export const env = {
     BREVO_API_KEY: process.env.BREVO_API_KEY || '',
     BREVO_SENDER_EMAIL: process.env.BREVO_SENDER_EMAIL || 'noreply@yoursaas.com',
     BREVO_SENDER_NAME: process.env.BREVO_SENDER_NAME || 'YourSaaS',
+    /** Optional Brevo contact list ID for footer newsletter signups */
+    BREVO_NEWSLETTER_LIST_ID: process.env.BREVO_NEWSLETTER_LIST_ID
+        ? parseInt(process.env.BREVO_NEWSLETTER_LIST_ID, 10)
+        : undefined,
 
     // Frontend URLs
     DEVELOPER_PORTAL_URL: process.env.DEVELOPER_PORTAL_URL || 'http://localhost:3001',
