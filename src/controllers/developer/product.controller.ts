@@ -2,8 +2,7 @@ import type { Context } from 'hono';
 import { and, avg, count, desc, eq, ne } from 'drizzle-orm';
 import { db } from '../../db/index.js';
 import { clients, developerProducts, productCategories, productReviews } from '../../db/schema.js';
-import fs from 'fs';
-import path from 'path';
+import { saveProductImageFile } from '../../utils/product-media-save.js';
 import {
     DeveloperProductUpsertSchema,
     ProductIdParamSchema,
@@ -58,28 +57,6 @@ function listRowCoverImage(iconUrl: string | null, screenshotUrlsJson: string | 
     return null;
 }
 
-/**
- * Same pattern as developer profile images: `uploads/...` on disk, URL `/uploads/...`
- * (served by `app.use('/uploads/*', serveStatic({ root: './' }))` in index.ts).
- */
-async function saveProductImageFile(
-    file: File,
-    kind: 'icons' | 'screenshots',
-    developerId: number
-): Promise<string> {
-    const uploadDir = path.join(process.cwd(), 'uploads', 'products', kind);
-    if (!fs.existsSync(uploadDir)) {
-        fs.mkdirSync(uploadDir, { recursive: true });
-    }
-    const ext = path.extname(file.name || '') || '.bin';
-    const prefix = kind === 'icons' ? 'icon' : 'screenshot';
-    const filename = `${prefix}_${developerId}_${Date.now()}_${Math.round(Math.random() * 1e9)}${ext}`;
-    const filePath = path.join(uploadDir, filename);
-    const bytes = await file.arrayBuffer();
-    fs.writeFileSync(filePath, Buffer.from(bytes));
-    return `/uploads/products/${kind}/${filename}`;
-}
-
 async function parseProductInput(c: Context): Promise<{ input: DeveloperProductUpsertInput; bodyMap?: Record<string, unknown> }> {
     const contentType = c.req.header('content-type') || '';
     if (contentType.includes('multipart/form-data')) {
@@ -116,7 +93,9 @@ async function applyMediaFromMultipart(
 
     const iconCandidate = bodyMap.icon;
     if (iconCandidate instanceof File && iconCandidate.size > 0) {
-        iconUrl = await saveProductImageFile(iconCandidate, 'icons', developerId);
+        const saved = await saveProductImageFile(iconCandidate, 'icons', developerId);
+        if ('error' in saved) throw new Error(saved.error);
+        iconUrl = saved.url;
     }
 
     const shotsCandidate = bodyMap.screenshots;
@@ -131,7 +110,9 @@ async function applyMediaFromMultipart(
     if (shotFiles.length > 0) {
         const newUrls: string[] = [];
         for (const f of shotFiles.slice(0, 20)) {
-            newUrls.push(await saveProductImageFile(f, 'screenshots', developerId));
+            const saved = await saveProductImageFile(f, 'screenshots', developerId);
+            if ('error' in saved) throw new Error(saved.error);
+            newUrls.push(saved.url);
         }
         screenshotUrls = [...screenshotUrls, ...newUrls].slice(0, 20);
     }

@@ -11,6 +11,7 @@ developerProductRoutes.get('/live-limits', (c) => developerProductController.get
 developerProductRoutes.get('/:id/reviews', (c) => developerProductController.listProductReviews(c));
 developerProductRoutes.put('/:id/reviews/:reviewId/reply', (c) => developerProductController.upsertReviewReply(c));
 developerProductRoutes.get('/:id', (c) => developerProductController.getOne(c));
+developerProductRoutes.post('/:id', (c) => developerProductController.update(c));
 developerProductRoutes.put('/:id', (c) => developerProductController.update(c));
 developerProductRoutes.delete('/:id', (c) => developerProductController.remove(c));
 export default developerProductRoutes;
