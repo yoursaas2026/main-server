@@ -3,7 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import type { JWTPayload } from '../../utils/jwt.js';
 import { buildContractSettlementPreview, contractService } from '../../services/contract.service.js';
 import { db } from '../../db/index.js';
-import { developerProducts } from '../../db/schema.js';
+import { clients, developerProducts } from '../../db/schema.js';
 
 export class DeveloperContractController {
     async list(c: Context) {
@@ -35,6 +35,46 @@ export class DeveloperContractController {
         const fresh = await contractService.getByPublicId(publicId);
         const events = await contractService.listEvents(row.id);
         const amendments = await contractService.listAmendments(row.id);
+
+        const [buyer] = await db
+            .select({
+                id: clients.id,
+                name: clients.name,
+                email: clients.email,
+                companyName: clients.companyName,
+                industry: clients.industry,
+                companySize: clients.companySize,
+                country: clients.country,
+                buyerRole: clients.buyerRole,
+                primaryGoals: clients.primaryGoals,
+                budgetBand: clients.budgetBand,
+                timeline: clients.timeline,
+                technicalComfort: clients.technicalComfort,
+                problemStatement: clients.problemStatement,
+            })
+            .from(clients)
+            .where(eq(clients.id, fresh.clientId))
+            .limit(1);
+
+        let buyerContext = null;
+        if (buyer) {
+            buyerContext = {
+                id: buyer.id,
+                name: buyer.name,
+                email: buyer.email,
+                companyName: buyer.companyName,
+                industry: buyer.industry,
+                companySize: buyer.companySize,
+                country: buyer.country,
+                buyerRole: buyer.buyerRole,
+                primaryGoals: JSON.parse(buyer.primaryGoals || '[]') as string[],
+                budgetBand: buyer.budgetBand,
+                timeline: buyer.timeline,
+                technicalComfort: buyer.technicalComfort,
+                problemStatement: buyer.problemStatement,
+            };
+        }
+
         return c.json({
             success: true,
             data: {
@@ -42,6 +82,7 @@ export class DeveloperContractController {
                 events,
                 amendments,
                 settlementPreview: buildContractSettlementPreview(fresh),
+                buyerContext,
             },
         });
     }

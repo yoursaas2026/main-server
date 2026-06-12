@@ -169,6 +169,13 @@
       "when": 1780747064227,
       "tag": "0023_nebulous_solo",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1781293318925,
+      "tag": "0024_acoustic_zeigeist",
+      "breakpoints": true
     }
   ]
 }

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { JWTPayload } from '../../utils/jwt.js';
 import { buildContractSettlementPreview, contractService } from '../../services/contract.service.js';
 import { env } from '../../config/env.js';
+import { assertClientMayStartContract } from '../../utils/client-onboarding.js';
 
 const createSchema = z.object({
     productId: z.number().int().positive(),
@@ -27,6 +28,10 @@ export class UserContractController {
     async create(c: Context) {
         const u = c.get('user') as JWTPayload | undefined;
         if (!u || u.role !== 'client') return c.json({ success: false, error: 'Unauthorized' }, 401);
+
+        const onboardingBlock = await assertClientMayStartContract(c, u.id);
+        if (onboardingBlock) return onboardingBlock;
+
         const body = await c.req.json().catch(() => null);
         const parsed = createSchema.safeParse(body);
         if (!parsed.success) return c.json({ success: false, error: parsed.error.issues[0]?.message ?? 'Invalid' }, 400);

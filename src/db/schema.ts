@@ -139,6 +139,29 @@ export const clients = pgTable('clients', {
     taxId: varchar('tax_id', { length: 50 }),
     billingAddress: text('billing_address'),
 
+    /** business | individual */
+    accountType: varchar('account_type', { length: 20 }),
+    /** founder, ops, it, product, procurement, other */
+    buyerRole: varchar('buyer_role', { length: 80 }),
+    /** startup, smb, midmarket, enterprise */
+    companySize: varchar('company_size', { length: 32 }),
+    /** JSON string array — launch_product, internal_tool, automate_ops, buy_customize_saas, replace_tool */
+    primaryGoals: text('primary_goals'),
+    /** JSON string array of product_categories.id */
+    interestedCategoryIds: text('interested_category_ids'),
+    /** lt_50k, 50k_2l, 2l_10l, gt_10l (INR bands) */
+    budgetBand: varchar('budget_band', { length: 24 }),
+    /** exploring, 1_3_months, asap */
+    timeline: varchar('timeline', { length: 24 }),
+    /** non_technical, some_technical, engineering_team */
+    technicalComfort: varchar('technical_comfort', { length: 32 }),
+    problemStatement: text('problem_statement'),
+    /** JSON string array of preferred tech stacks */
+    preferredStacks: text('preferred_stacks'),
+    /** JSON string array of saved developer_products.id */
+    savedProductIds: text('saved_product_ids'),
+    onboardingCompletedAt: timestamp('onboarding_completed_at'),
+
     // Status & Verification
     isEmailVerified: boolean('is_email_verified').default(false),
     isPhoneVerified: boolean('is_phone_verified').default(false),
@@ -267,6 +290,14 @@ export const developerProducts = pgTable('developer_products', {
 
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const clientListingEvents = pgTable('client_listing_events', {
+    id: serial('id').primaryKey(),
+    clientId: integer('client_id').references(() => clients.id).notNull(),
+    productId: integer('product_id').references(() => developerProducts.id).notNull(),
+    eventType: varchar('event_type', { length: 24 }).notNull(),
+    createdAt: timestamp('created_at').defaultNow(),
 });
 
 export const productCategories = pgTable('product_categories', {

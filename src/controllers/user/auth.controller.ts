@@ -16,6 +16,7 @@ import {
     type ClientPublicProfile,
     type AuthResponseData,
 } from '../../types/auth.types.js';
+import { buildClientOnboardingStatus } from '../../utils/client-onboarding.js';
 
 // ─── Helper: pick only safe fields to send back to clients ────────────────────
 
@@ -460,7 +461,10 @@ export class UserAuthController {
             return c.json({
                 success: true,
                 message: 'User fetched successfully',
-                data: { user: pickClientPublicProfile(client) },
+                data: {
+                    user: pickClientPublicProfile(client),
+                    onboarding: buildClientOnboardingStatus(client),
+                },
             });
         } catch (error) {
             console.error('[UserAuth] getCurrentUser error:', error);
