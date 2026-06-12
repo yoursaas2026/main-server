@@ -20,6 +20,7 @@ import {
     cleanupAllProductMediaFromInput,
     cleanupReplacedProductMedia,
 } from '../../utils/product-media-cleanup.js';
+import { assertDeveloperMarketplaceReady } from '../../utils/developer-onboarding.js';
 
 function assertDeveloper(c: Context) {
     const jwtUser = c.get('user') as { id: number; role: string } | undefined;
@@ -316,6 +317,9 @@ export class DeveloperProductController {
         const jwtUser = assertDeveloper(c);
         if (!jwtUser) return c.json({ success: false, error: 'Unauthorized' }, 401);
 
+        const onboardingBlock = await assertDeveloperMarketplaceReady(c, jwtUser.id);
+        if (onboardingBlock) return onboardingBlock;
+
         let input: DeveloperProductUpsertInput;
         let bodyMap: Record<string, unknown> | undefined;
         try {
@@ -552,6 +556,9 @@ export class DeveloperProductController {
     async update(c: Context) {
         const jwtUser = assertDeveloper(c);
         if (!jwtUser) return c.json({ success: false, error: 'Unauthorized' }, 401);
+
+        const onboardingBlock = await assertDeveloperMarketplaceReady(c, jwtUser.id);
+        if (onboardingBlock) return onboardingBlock;
 
         const parsedId = ProductIdParamSchema.safeParse({ id: c.req.param('id') });
         if (!parsedId.success) {

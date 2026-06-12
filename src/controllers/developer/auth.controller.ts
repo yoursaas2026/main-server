@@ -16,6 +16,7 @@ import {
     type DeveloperPublicProfile,
     type AuthResponseData,
 } from '../../types/auth.types.js';
+import { buildDeveloperOnboardingStatus } from '../../utils/developer-onboarding.js';
 
 // ─── Helper: pick only safe fields to send back to clients ────────────────────
 
@@ -492,7 +493,10 @@ export class DeveloperAuthController {
             return c.json({
                 success: true,
                 message: 'User fetched successfully',
-                data: { user: pickDeveloperPublicProfile(developer) },
+                data: {
+                    user: pickDeveloperPublicProfile(developer),
+                    onboarding: buildDeveloperOnboardingStatus(developer),
+                },
             });
         } catch (error) {
             console.error('[DeveloperAuth] getCurrentUser error:', error);

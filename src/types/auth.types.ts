@@ -100,6 +100,15 @@ export interface DeveloperPublicProfile {
     planEndDate: Date | null;
 }
 
+export interface DeveloperOnboardingStatus {
+    profileComplete: boolean;
+    profileCompletionPercent: number;
+    missingProfileFields: string[];
+    bankVerified: boolean;
+    bankDetailsSaved: boolean;
+    canAccessMarketplace: boolean;
+}
+
 export interface DeveloperAuthProfile {
     id: number;
     name: string;
