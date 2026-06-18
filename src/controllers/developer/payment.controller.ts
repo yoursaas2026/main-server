@@ -180,17 +180,29 @@ export class PaymentController {
             return c.json({ error: 'Failed to read request body' }, 400);
         }
 
+        if (!env.CASHFREE_PG_CLIENT_SECRET) {
+            return c.json({ error: 'Cashfree PG not configured on server (CASHFREE_PG_CLIENT_SECRET)' }, 503);
+        }
+
         const signature = c.req.header('x-webhook-signature');
         const timestamp = c.req.header('x-webhook-timestamp');
         if (!signature || !timestamp) {
-            return c.json({ error: 'Missing webhook signature headers' }, 401);
+            console.warn('[Payment] webhook missing signature headers');
+            return c.json({ error: 'Missing x-webhook-signature or x-webhook-timestamp' }, 401);
         }
 
         let webhookEvent;
         try {
             webhookEvent = paymentService.verifyWebhookSignature(signature, bodyString, timestamp);
-        } catch {
-            return c.json({ error: 'Invalid webhook signature' }, 401);
+        } catch (err) {
+            console.warn('[Payment] webhook signature mismatch:', err instanceof Error ? err.message : err);
+            return c.json(
+                {
+                    error:
+                        'Invalid PG webhook signature — use CASHFREE_PG_CLIENT_SECRET from the same Cashfree PG app (sandbox vs production must match)',
+                },
+                401
+            );
         }
 
         try {

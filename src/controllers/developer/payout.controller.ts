@@ -4,6 +4,8 @@ import { db } from '../../db/index.js';
 import { developers } from '../../db/schema.js';
 import { and, eq } from 'drizzle-orm';
 import { cashfreePayoutService } from '../../services/cashfree-payout.service.js';
+import { CashfreePayout } from '../../config/cashfree.js';
+import { env } from '../../config/env.js';
 
 const IFSC_RE = /^[A-Z]{4}0[A-Z0-9]{6}$/;
 
@@ -325,6 +327,43 @@ export class DeveloperPayoutController {
             console.error('[DeveloperPayout] syncBankValidation error:', err);
             return c.json({ success: false, error: msg }, 400);
         }
+    }
+
+    /** Public Cashfree Payouts webhook (V2) — must not sit behind auth middleware. */
+    async cashfreeWebhook(c: Context) {
+        let bodyString = '';
+        try {
+            bodyString = await c.req.text();
+        } catch {
+            return c.json({ error: 'Failed to read request body' }, 400);
+        }
+
+        if (!env.CASHFREE_PAYOUT_CLIENT_SECRET) {
+            return c.json({ error: 'Cashfree Payouts not configured on server (CASHFREE_PAYOUT_CLIENT_SECRET)' }, 503);
+        }
+
+        const signature = c.req.header('x-webhook-signature');
+        const timestamp = c.req.header('x-webhook-timestamp');
+        if (!signature || !timestamp) {
+            console.warn('[DeveloperPayout] webhook missing signature headers');
+            return c.json({ error: 'Missing x-webhook-signature or x-webhook-timestamp' }, 401);
+        }
+
+        try {
+            CashfreePayout.PayoutVerifyWebhookSignature(signature, bodyString, timestamp);
+        } catch (err) {
+            console.warn('[DeveloperPayout] webhook signature mismatch:', err instanceof Error ? err.message : err);
+            return c.json(
+                {
+                    error:
+                        'Invalid payout webhook signature — use CASHFREE_PAYOUT_CLIENT_SECRET from the same Cashfree Payouts app (sandbox vs production must match)',
+                },
+                401
+            );
+        }
+
+        // Acknowledge now; transfer status updates can be processed here later.
+        return c.json({ status: 'ok' });
     }
 }
 
