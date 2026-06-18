@@ -6,6 +6,7 @@ import { DeveloperProductUpsertSchema, ProductIdParamSchema, } from '../../types
 import { getMissingForLiveListing } from '../../utils/listing-publish-readiness.js';
 import { countDeveloperLiveListings, getDeveloperPlan, liveListingLimitErrorMessage, maxLiveListingsForPlan, } from '../../utils/developer-live-listing-limits.js';
 import { cleanupAllProductMediaForRow, cleanupAllProductMediaFromInput, cleanupReplacedProductMedia, } from '../../utils/product-media-cleanup.js';
+import { assertDeveloperMarketplaceReady } from '../../utils/developer-onboarding.js';
 function assertDeveloper(c) {
     const jwtUser = c.get('user');
     if (!jwtUser || jwtUser.role !== 'developer')
@@ -283,6 +284,9 @@ export class DeveloperProductController {
         const jwtUser = assertDeveloper(c);
         if (!jwtUser)
             return c.json({ success: false, error: 'Unauthorized' }, 401);
+        const onboardingBlock = await assertDeveloperMarketplaceReady(c, jwtUser.id);
+        if (onboardingBlock)
+            return onboardingBlock;
         let input;
         let bodyMap;
         try {
@@ -484,6 +488,9 @@ export class DeveloperProductController {
         const jwtUser = assertDeveloper(c);
         if (!jwtUser)
             return c.json({ success: false, error: 'Unauthorized' }, 401);
+        const onboardingBlock = await assertDeveloperMarketplaceReady(c, jwtUser.id);
+        if (onboardingBlock)
+            return onboardingBlock;
         const parsedId = ProductIdParamSchema.safeParse({ id: c.req.param('id') });
         if (!parsedId.success) {
             return c.json({ success: false, error: 'Invalid product ID' }, 400);

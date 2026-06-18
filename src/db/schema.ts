@@ -91,11 +91,10 @@ export const developers = pgTable('developers', {
     payoutAccountType: varchar('payout_account_type', { length: 24 }), // savings, current
     payoutBankDetailsUpdatedAt: timestamp('payout_bank_details_updated_at'),
 
-    /** RazorpayX composite validation — contact/fund ids from last attempt */
-    payoutRazorpayContactId: varchar('payout_razorpay_contact_id', { length: 64 }),
-    payoutRazorpayFundAccountId: varchar('payout_razorpay_fund_account_id', { length: 64 }),
+    /** Cashfree Payouts beneficiary id from last verification attempt */
+    payoutCashfreeBeneficiaryId: varchar('payout_cashfree_beneficiary_id', { length: 64 }),
     payoutBankValidationId: varchar('payout_bank_validation_id', { length: 64 }),
-    /** created | completed | failed (Razorpay fund_account.validation status) */
+    /** created | completed | failed (Cashfree beneficiary verification status) */
     payoutBankValidationStatus: varchar('payout_bank_validation_status', { length: 24 }),
     /** When completed: valid | invalid | … from validation_results.account_status */
     payoutBankValidationAccountStatus: varchar('payout_bank_validation_account_status', { length: 32 }),
@@ -203,8 +202,8 @@ export const admins = pgTable('admins', {
 export const developerPayments = pgTable('developer_payments', {
     id: serial('id').primaryKey(),
     developerId: integer('developer_id').references(() => developers.id).notNull(),
-    orderId: varchar('order_id', { length: 100 }), // razorpay order id
-    paymentId: varchar('payment_id', { length: 100 }), // razorpay payment id
+    orderId: varchar('order_id', { length: 100 }), // Cashfree order id
+    paymentId: varchar('payment_id', { length: 100 }), // Cashfree cf_payment_id
     plan: varchar('plan', { length: 20 }), // pro, ultimate
     billingCycle: varchar('billing_cycle', { length: 20 }), // monthly, yearly
     amount: integer('amount'),
@@ -373,7 +372,7 @@ export const contractAmendments = pgTable('contract_amendments', {
     additionalAmountPaise: integer('additional_amount_paise').notNull().default(0),
     status: varchar('status', { length: 32 }).notNull(),
     counterpartyApprovedAt: timestamp('counterparty_approved_at'),
-    razorpayOrderId: varchar('razorpay_order_id', { length: 100 }),
+    paymentOrderId: varchar('payment_order_id', { length: 100 }),
     createdAt: timestamp('created_at').defaultNow(),
     appliedAt: timestamp('applied_at'),
 });

@@ -43,7 +43,8 @@ export const DeveloperProductUpsertSchema = z.object({
     features: z.array(ProductFeatureDraftSchema).max(60).default([]),
     /** Draft rows may be empty while editing; publish readiness requires at least 2 non-empty lines. */
     useCases: z.array(z.string().max(240)).max(40).default([]),
-    audienceTags: z.array(NonEmpty.max(80)).max(40).default([]),
+    /** Draft may include empty segments while typing commas; publish readiness requires 2+ non-empty tags. */
+    audienceTags: z.array(z.string().max(80)).max(40).default([]),
     trialDays: z.number().int().min(0).max(365).default(0),
     freeTrial: z.boolean().default(false),
     deploymentTime: z.string().trim().max(180).optional().default(''),

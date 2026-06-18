@@ -2,7 +2,7 @@ import type { Context } from 'hono';
 import { z } from 'zod';
 import type { JWTPayload } from '../../utils/jwt.js';
 import { buildContractSettlementPreview, contractService } from '../../services/contract.service.js';
-import { env } from '../../config/env.js';
+import { cashfreeCheckoutMode } from '../../config/cashfree.js';
 import { assertClientMayStartContract } from '../../utils/client-onboarding.js';
 
 const createSchema = z.object({
@@ -80,10 +80,17 @@ export class UserContractController {
         if (!u || u.role !== 'client') return c.json({ success: false, error: 'Unauthorized' }, 401);
         const publicId = c.req.param('publicId');
         try {
-            const { orderId, amount, currency, contract } = await contractService.createInitialEscrowOrder(publicId, u.id);
+            const { orderId, paymentSessionId, amount, currency, contract } = await contractService.createInitialEscrowOrder(publicId, u.id);
             return c.json({
                 success: true,
-                data: { orderId, amount, currency, key: env.RAZORPAY_KEY_ID, contractPublicId: contract.publicId },
+                data: {
+                    orderId,
+                    paymentSessionId,
+                    amount,
+                    currency,
+                    cashfreeMode: cashfreeCheckoutMode(),
+                    contractPublicId: contract.publicId,
+                },
             });
         } catch (e) {
             return c.json({ success: false, error: e instanceof Error ? e.message : 'Failed' }, 400);
@@ -102,11 +109,31 @@ export class UserContractController {
                 success: true,
                 data: {
                     orderId: r.orderId,
+                    paymentSessionId: r.paymentSessionId,
                     amount: r.amount,
                     currency: r.currency,
-                    key: env.RAZORPAY_KEY_ID,
+                    cashfreeMode: r.cashfreeMode,
                 },
             });
+        } catch (e) {
+            return c.json({ success: false, error: e instanceof Error ? e.message : 'Failed' }, 400);
+        }
+    }
+
+    async verifyEscrowPayment(c: Context) {
+        const u = c.get('user') as JWTPayload | undefined;
+        if (!u || u.role !== 'client') return c.json({ success: false, error: 'Unauthorized' }, 401);
+        const publicId = c.req.param('publicId');
+        const body = await c.req.json().catch(() => null);
+        const orderId = body?.order_id;
+        if (!orderId || typeof orderId !== 'string') {
+            return c.json({ success: false, error: 'order_id required' }, 400);
+        }
+        const row = await contractService.getByPublicId(publicId);
+        if (!row || row.clientId !== u.id) return c.json({ success: false, error: 'Not found' }, 404);
+        try {
+            await contractService.verifyEscrowPayment(orderId, u.id);
+            return c.json({ success: true });
         } catch (e) {
             return c.json({ success: false, error: e instanceof Error ? e.message : 'Failed' }, 400);
         }

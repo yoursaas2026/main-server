@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import { and, desc, eq, lte } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import {
+    clients,
     contractAmendments,
     contractDisputes,
     contractEvents,
@@ -9,6 +10,7 @@ import {
     contracts,
     developerProducts,
 } from '../db/schema.js';
+import { cashfreeCheckoutMode } from '../config/cashfree.js';
 import { env } from '../config/env.js';
 import { paymentService } from './payment.service.js';
 import { contractSettlementService } from './contract-settlement.service.js';
@@ -296,27 +298,50 @@ export const contractService = {
         if (!c || c.clientId !== clientId) throw new Error('Contract not found');
         if (c.status !== ContractStatus.AWAITING_CLIENT_PAYMENT) throw new Error('Contract is not awaiting payment');
 
-        const order = await paymentService.createContractOrder(c.grossAmountPaise, {
-            contractPublicId: c.publicId,
-            contractId: String(c.id),
-            clientId: String(c.clientId),
-            purpose: 'initial_escrow',
-        });
+        const [client] = await db
+            .select({ email: clients.email, phone: clients.phone, name: clients.name })
+            .from(clients)
+            .where(eq(clients.id, clientId))
+            .limit(1);
+        if (!client) throw new Error('Client not found');
+
+        const order = await paymentService.createContractOrder(
+            c.grossAmountPaise,
+            {
+                contractPublicId: c.publicId,
+                contractId: String(c.id),
+                clientId: String(c.clientId),
+                purpose: 'initial_escrow',
+            },
+            {
+                id: `client_${clientId}`,
+                phone: client.phone ?? '9999999999',
+                email: client.email,
+                name: client.name ?? undefined,
+            }
+        );
 
         await db.insert(contractPayments).values({
             contractId: c.id,
             purpose: 'initial_escrow',
-            orderId: order.id,
+            orderId: order.orderId,
             amountPaise: c.grossAmountPaise,
             status: 'created',
         });
 
-        return { orderId: order.id as string, amount: order.amount, currency: order.currency, contract: c };
+        return {
+            orderId: order.orderId,
+            paymentSessionId: order.paymentSessionId,
+            amount: order.amount,
+            currency: order.currency,
+            cashfreeMode: cashfreeCheckoutMode(),
+            contract: c,
+        };
     },
 
     async onEscrowPaymentCaptured(input: { orderId: string; paymentId: string; amount: number }) {
         const [pay] = await db.select().from(contractPayments).where(eq(contractPayments.orderId, input.orderId)).limit(1);
-        if (!pay) return;
+        if (!pay || pay.status === 'completed') return;
 
         await db
             .update(contractPayments)
@@ -577,24 +602,40 @@ export const contractService = {
                 .set({ status: 'awaiting_payment', counterpartyApprovedAt: new Date() })
                 .where(eq(contractAmendments.id, amendmentId));
 
-            const order = await paymentService.createContractOrder(am.additionalAmountPaise, {
-                contractPublicId: c.publicId,
-                contractId: String(c.id),
-                amendmentId: String(am.id),
-                clientId: String(c.clientId),
-                purpose: 'amendment',
-            });
+            const [client] = await db
+                .select({ email: clients.email, phone: clients.phone, name: clients.name })
+                .from(clients)
+                .where(eq(clients.id, c.clientId))
+                .limit(1);
+            if (!client) throw new Error('Client not found');
+
+            const order = await paymentService.createContractOrder(
+                am.additionalAmountPaise,
+                {
+                    contractPublicId: c.publicId,
+                    contractId: String(c.id),
+                    amendmentId: String(am.id),
+                    clientId: String(c.clientId),
+                    purpose: 'amendment',
+                },
+                {
+                    id: `client_${c.clientId}`,
+                    phone: client.phone ?? '9999999999',
+                    email: client.email,
+                    name: client.name ?? undefined,
+                }
+            );
 
             await db
                 .update(contractAmendments)
-                .set({ razorpayOrderId: order.id as string })
+                .set({ paymentOrderId: order.orderId })
                 .where(eq(contractAmendments.id, amendmentId));
 
             await db.insert(contractPayments).values({
                 contractId: c.id,
                 amendmentId: am.id,
                 purpose: 'amendment',
-                orderId: order.id as string,
+                orderId: order.orderId,
                 amountPaise: am.additionalAmountPaise,
                 status: 'created',
             });
@@ -606,7 +647,7 @@ export const contractService = {
 
             await logEvent(c.id, c.status, ContractStatus.AWAITING_AMENDMENT_PAYMENT, am.proposedByClient ? 'developer' : 'client', actorDeveloperId ?? actorClientId!, { amendmentId });
             await notify(c.id, `💳 Amendment #${am.amendmentNumber} approved — please pay additional ₹${(am.additionalAmountPaise / 100).toFixed(2)} to apply changes.`);
-            return { needsPayment: true as const, orderId: order.id as string, amount: order.amount, currency: order.currency };
+            return { needsPayment: true as const, orderId: order.orderId, amount: order.amount, currency: order.currency };
         }
 
         await db
@@ -630,6 +671,26 @@ export const contractService = {
         return { needsPayment: false as const };
     },
 
+    async verifyEscrowPayment(orderId: string, clientId: number) {
+        const order = await paymentService.fetchOrder(orderId);
+        if (order.order_status !== 'PAID') {
+            throw new Error('Payment is not completed yet');
+        }
+
+        const [pay] = await db.select().from(contractPayments).where(eq(contractPayments.orderId, orderId)).limit(1);
+        if (!pay) throw new Error('Payment record not found');
+
+        const [c] = await db.select().from(contracts).where(eq(contracts.id, pay.contractId)).limit(1);
+        if (!c || c.clientId !== clientId) throw new Error('Contract not found');
+
+        const paymentId = order.cf_order_id != null ? String(order.cf_order_id) : orderId;
+        await this.onEscrowPaymentCaptured({
+            orderId,
+            paymentId,
+            amount: pay.amountPaise,
+        });
+    },
+
     async createAmendmentEscrowOrder(contractPublicId: string, clientId: number, amendmentId: number) {
         const c = await this.getByPublicId(contractPublicId);
         if (!c || c.clientId !== clientId) throw new Error('Contract not found');
@@ -638,12 +699,16 @@ export const contractService = {
             .from(contractAmendments)
             .where(and(eq(contractAmendments.id, amendmentId), eq(contractAmendments.contractId, c.id)))
             .limit(1);
-        if (!am || am.status !== 'awaiting_payment' || !am.razorpayOrderId) throw new Error('Amendment not awaiting this payment');
+        if (!am || am.status !== 'awaiting_payment' || !am.paymentOrderId) throw new Error('Amendment not awaiting this payment');
+
+        const checkout = await paymentService.getCheckoutSessionForOrder(am.paymentOrderId, am.additionalAmountPaise);
 
         return {
-            orderId: am.razorpayOrderId,
-            amount: am.additionalAmountPaise,
-            currency: 'INR',
+            orderId: checkout.orderId,
+            paymentSessionId: checkout.paymentSessionId,
+            amount: checkout.amount,
+            currency: checkout.currency,
+            cashfreeMode: cashfreeCheckoutMode(),
             contract: c,
         };
     },

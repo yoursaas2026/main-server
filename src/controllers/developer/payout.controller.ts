@@ -3,11 +3,7 @@ import { z } from 'zod';
 import { db } from '../../db/index.js';
 import { developers } from '../../db/schema.js';
 import { and, eq } from 'drizzle-orm';
-import {
-    mapValidationEntityToPayoutColumns,
-    razorpayXValidationService,
-    type FundAccountValidationEntity,
-} from '../../services/razorpay-x-validation.service.js';
+import { cashfreePayoutService } from '../../services/cashfree-payout.service.js';
 
 const IFSC_RE = /^[A-Z]{4}0[A-Z0-9]{6}$/;
 
@@ -82,7 +78,7 @@ export class DeveloperPayoutController {
                     bankValidationDetails: row.payoutBankValidationDetails ?? null,
                     bankValidationAt: row.payoutBankValidationAt ?? null,
                     bankVerified,
-                    razorpayValidationConfigured: razorpayXValidationService.isConfigured(),
+                    cashfreePayoutConfigured: cashfreePayoutService.isConfigured(),
                 },
             });
         } catch (err) {
@@ -141,8 +137,7 @@ export class DeveloperPayoutController {
                     payoutAccountNumber: nextAccountNumber,
                     payoutAccountType: accountType,
                     payoutBankDetailsUpdatedAt: new Date(),
-                    payoutRazorpayContactId: null,
-                    payoutRazorpayFundAccountId: null,
+                    payoutCashfreeBeneficiaryId: null,
                     payoutBankValidationId: null,
                     payoutBankValidationStatus: null,
                     payoutBankValidationAccountStatus: null,
@@ -159,19 +154,19 @@ export class DeveloperPayoutController {
         }
     }
 
-    /** RazorpayX composite bank validation — India (IFSC) only for now. */
+    /** Cashfree Payouts beneficiary verification — India (IFSC) only for now. */
     async verifyBank(c: Context) {
         const user = c.get('user');
         if (!user || user.role !== 'developer') {
             return c.json({ success: false, error: 'Unauthorized' }, 401);
         }
 
-        if (!razorpayXValidationService.isConfigured()) {
+        if (!cashfreePayoutService.isConfigured()) {
             return c.json(
                 {
                     success: false,
                     error:
-                        'Bank verification is not configured. Set RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, and RAZORPAYX_SOURCE_ACCOUNT_NUMBER on the server.',
+                        'Bank verification is not configured. Set CASHFREE_PAYOUT_CLIENT_ID and CASHFREE_PAYOUT_CLIENT_SECRET on the server.',
                 },
                 503
             );
@@ -224,13 +219,13 @@ export class DeveloperPayoutController {
                     {
                         success: false,
                         error:
-                            'Add a valid Indian mobile number on your developer profile before verifying (used as Razorpay contact).',
+                            'Add a valid Indian mobile number on your developer profile before verifying (used for Cashfree beneficiary contact).',
                     },
                     400
                 );
             }
 
-            const entity = await razorpayXValidationService.createBankAccountValidation({
+            const result = await cashfreePayoutService.createOrVerifyBeneficiary({
                 developerId: user.id,
                 accountHolderName: holder,
                 ifsc,
@@ -239,18 +234,15 @@ export class DeveloperPayoutController {
                 phoneDigits,
             });
 
-            const mapped = mapValidationEntityToPayoutColumns(entity);
-
             await db
                 .update(developers)
                 .set({
-                    payoutBankValidationId: entity.id,
-                    payoutBankValidationStatus: mapped.payoutBankValidationStatus,
-                    payoutBankValidationAccountStatus: mapped.payoutBankValidationAccountStatus,
-                    payoutBankValidationDetails: mapped.payoutBankValidationDetails,
-                    payoutBankValidationAt: mapped.payoutBankValidationAt,
-                    payoutRazorpayFundAccountId: mapped.payoutRazorpayFundAccountId,
-                    payoutRazorpayContactId: mapped.payoutRazorpayContactId,
+                    payoutBankValidationId: result.beneficiaryId,
+                    payoutBankValidationStatus: result.status,
+                    payoutBankValidationAccountStatus: result.accountStatus,
+                    payoutBankValidationDetails: result.details,
+                    payoutBankValidationAt: new Date(),
+                    payoutCashfreeBeneficiaryId: result.beneficiaryId,
                     updatedAt: new Date(),
                 })
                 .where(eq(developers.id, user.id));
@@ -258,11 +250,11 @@ export class DeveloperPayoutController {
             return c.json({
                 success: true,
                 data: {
-                    validationId: entity.id,
-                    status: entity.status,
-                    bankVerified: entity.status === 'completed' && mapped.payoutBankValidationAccountStatus === 'valid',
-                    accountStatus: mapped.payoutBankValidationAccountStatus,
-                    details: mapped.payoutBankValidationDetails,
+                    validationId: result.beneficiaryId,
+                    status: result.status,
+                    bankVerified: result.status === 'completed' && result.accountStatus === 'valid',
+                    accountStatus: result.accountStatus,
+                    details: result.details,
                 },
             });
         } catch (err) {
@@ -272,37 +264,47 @@ export class DeveloperPayoutController {
         }
     }
 
-    /** Poll Razorpay for the latest status of the developer's current validation. */
+    /** Poll Cashfree for the latest beneficiary verification status. */
     async syncBankValidation(c: Context) {
         const user = c.get('user');
         if (!user || user.role !== 'developer') {
             return c.json({ success: false, error: 'Unauthorized' }, 401);
         }
 
-        if (!razorpayXValidationService.isConfigured()) {
+        if (!cashfreePayoutService.isConfigured()) {
             return c.json({ success: false, error: 'Bank verification is not configured on the server.' }, 503);
         }
 
         try {
             const [row] = await db
-                .select({ payoutBankValidationId: developers.payoutBankValidationId })
+                .select({ payoutCashfreeBeneficiaryId: developers.payoutCashfreeBeneficiaryId })
                 .from(developers)
                 .where(eq(developers.id, user.id))
                 .limit(1);
 
-            if (!row?.payoutBankValidationId) {
+            if (!row?.payoutCashfreeBeneficiaryId) {
                 return c.json({ success: false, error: 'No verification request on file. Start verification first.' }, 400);
             }
 
-            const entity = await razorpayXValidationService.fetchValidation(row.payoutBankValidationId);
-            const mapped = mapValidationEntityToPayoutColumns(entity);
+            const result = await cashfreePayoutService.fetchBeneficiary(row.payoutCashfreeBeneficiaryId);
+            const mapped = {
+                payoutBankValidationStatus: result.status,
+                payoutBankValidationAccountStatus: result.accountStatus,
+                payoutBankValidationDetails: result.details,
+                payoutBankValidationAt: new Date(),
+                payoutCashfreeBeneficiaryId: result.beneficiaryId,
+                updatedAt: new Date(),
+            };
 
             await db
                 .update(developers)
-                .set({
-                    ...mapped,
-                })
-                .where(and(eq(developers.id, user.id), eq(developers.payoutBankValidationId, entity.id)));
+                .set(mapped)
+                .where(
+                    and(
+                        eq(developers.id, user.id),
+                        eq(developers.payoutCashfreeBeneficiaryId, row.payoutCashfreeBeneficiaryId)
+                    )
+                );
 
             const bankVerified =
                 mapped.payoutBankValidationStatus === 'completed' &&
@@ -311,7 +313,7 @@ export class DeveloperPayoutController {
             return c.json({
                 success: true,
                 data: {
-                    validationId: entity.id,
+                    validationId: row.payoutCashfreeBeneficiaryId,
                     status: mapped.payoutBankValidationStatus,
                     bankVerified,
                     accountStatus: mapped.payoutBankValidationAccountStatus,
@@ -323,18 +325,6 @@ export class DeveloperPayoutController {
             console.error('[DeveloperPayout] syncBankValidation error:', err);
             return c.json({ success: false, error: msg }, 400);
         }
-    }
-
-    /** Called from Razorpay webhooks when `fund_account.validation.*` events arrive. */
-    async applyValidationFromWebhookEntity(entity: FundAccountValidationEntity) {
-        if (!entity?.id) return false;
-        const mapped = mapValidationEntityToPayoutColumns(entity);
-        const updated = await db
-            .update(developers)
-            .set(mapped)
-            .where(eq(developers.payoutBankValidationId, entity.id))
-            .returning({ id: developers.id });
-        return updated.length > 0;
     }
 }
 

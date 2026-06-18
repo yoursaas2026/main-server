@@ -79,11 +79,10 @@ export const developers = pgTable('developers', {
     payoutAccountNumber: text('payout_account_number'),
     payoutAccountType: varchar('payout_account_type', { length: 24 }), // savings, current
     payoutBankDetailsUpdatedAt: timestamp('payout_bank_details_updated_at'),
-    /** RazorpayX composite validation — contact/fund ids from last attempt */
-    payoutRazorpayContactId: varchar('payout_razorpay_contact_id', { length: 64 }),
-    payoutRazorpayFundAccountId: varchar('payout_razorpay_fund_account_id', { length: 64 }),
+    /** Cashfree Payouts beneficiary id from last verification attempt */
+    payoutCashfreeBeneficiaryId: varchar('payout_cashfree_beneficiary_id', { length: 64 }),
     payoutBankValidationId: varchar('payout_bank_validation_id', { length: 64 }),
-    /** created | completed | failed (Razorpay fund_account.validation status) */
+    /** created | completed | failed (Cashfree beneficiary verification status) */
     payoutBankValidationStatus: varchar('payout_bank_validation_status', { length: 24 }),
     /** When completed: valid | invalid | … from validation_results.account_status */
     payoutBankValidationAccountStatus: varchar('payout_bank_validation_account_status', { length: 32 }),
@@ -120,6 +119,28 @@ export const clients = pgTable('clients', {
     // Business Details
     taxId: varchar('tax_id', { length: 50 }),
     billingAddress: text('billing_address'),
+    /** business | individual */
+    accountType: varchar('account_type', { length: 20 }),
+    /** founder, ops, it, product, procurement, other */
+    buyerRole: varchar('buyer_role', { length: 80 }),
+    /** startup, smb, midmarket, enterprise */
+    companySize: varchar('company_size', { length: 32 }),
+    /** JSON string array — launch_product, internal_tool, automate_ops, buy_customize_saas, replace_tool */
+    primaryGoals: text('primary_goals'),
+    /** JSON string array of product_categories.id */
+    interestedCategoryIds: text('interested_category_ids'),
+    /** lt_50k, 50k_2l, 2l_10l, gt_10l (INR bands) */
+    budgetBand: varchar('budget_band', { length: 24 }),
+    /** exploring, 1_3_months, asap */
+    timeline: varchar('timeline', { length: 24 }),
+    /** non_technical, some_technical, engineering_team */
+    technicalComfort: varchar('technical_comfort', { length: 32 }),
+    problemStatement: text('problem_statement'),
+    /** JSON string array of preferred tech stacks */
+    preferredStacks: text('preferred_stacks'),
+    /** JSON string array of saved developer_products.id */
+    savedProductIds: text('saved_product_ids'),
+    onboardingCompletedAt: timestamp('onboarding_completed_at'),
     // Status & Verification
     isEmailVerified: boolean('is_email_verified').default(false),
     isPhoneVerified: boolean('is_phone_verified').default(false),
@@ -153,8 +174,8 @@ export const admins = pgTable('admins', {
 export const developerPayments = pgTable('developer_payments', {
     id: serial('id').primaryKey(),
     developerId: integer('developer_id').references(() => developers.id).notNull(),
-    orderId: varchar('order_id', { length: 100 }), // razorpay order id
-    paymentId: varchar('payment_id', { length: 100 }), // razorpay payment id
+    orderId: varchar('order_id', { length: 100 }), // Cashfree order id
+    paymentId: varchar('payment_id', { length: 100 }), // Cashfree cf_payment_id
     plan: varchar('plan', { length: 20 }), // pro, ultimate
     billingCycle: varchar('billing_cycle', { length: 20 }), // monthly, yearly
     amount: integer('amount'),
@@ -229,6 +250,13 @@ export const developerProducts = pgTable('developer_products', {
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
 });
+export const clientListingEvents = pgTable('client_listing_events', {
+    id: serial('id').primaryKey(),
+    clientId: integer('client_id').references(() => clients.id).notNull(),
+    productId: integer('product_id').references(() => developerProducts.id).notNull(),
+    eventType: varchar('event_type', { length: 24 }).notNull(),
+    createdAt: timestamp('created_at').defaultNow(),
+});
 export const productCategories = pgTable('product_categories', {
     id: serial('id').primaryKey(),
     name: varchar('name', { length: 80 }).notNull().unique(),
@@ -298,7 +326,7 @@ export const contractAmendments = pgTable('contract_amendments', {
     additionalAmountPaise: integer('additional_amount_paise').notNull().default(0),
     status: varchar('status', { length: 32 }).notNull(),
     counterpartyApprovedAt: timestamp('counterparty_approved_at'),
-    razorpayOrderId: varchar('razorpay_order_id', { length: 100 }),
+    paymentOrderId: varchar('payment_order_id', { length: 100 }),
     createdAt: timestamp('created_at').defaultNow(),
     appliedAt: timestamp('applied_at'),
 });

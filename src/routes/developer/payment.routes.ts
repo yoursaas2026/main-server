@@ -13,7 +13,7 @@ paymentRoutes.get('/pricing', (c) => paymentController.getPricing(c));
 paymentRoutes.post('/create-order', authMiddleware, (c) => paymentController.createSubscriptionOrder(c));
 paymentRoutes.post('/verify', authMiddleware, (c) => paymentController.verifyPaymentClientSide(c));
 
-// Public webhook endpoint for Razorpay to POST to
-paymentRoutes.post('/webhook/razorpay', (c) => paymentController.razorpayWebhook(c));
+// Public webhook endpoint for Cashfree to POST to
+paymentRoutes.post('/webhook/cashfree', (c) => paymentController.cashfreeWebhook(c));
 
 export default paymentRoutes;

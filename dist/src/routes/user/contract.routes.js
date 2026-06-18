@@ -9,6 +9,7 @@ userContractRoutes.post('/:publicId/amendments/:amendmentId/approve', (c) => use
 userContractRoutes.get('/:publicId', (c) => userContractController.getOne(c));
 userContractRoutes.post('/:publicId/cancel-pending', (c) => userContractController.cancelPending(c));
 userContractRoutes.post('/:publicId/pay-escrow', (c) => userContractController.payEscrow(c));
+userContractRoutes.post('/:publicId/verify-escrow-payment', (c) => userContractController.verifyEscrowPayment(c));
 userContractRoutes.post('/:publicId/amendments/:amendmentId/pay', (c) => userContractController.payAmendment(c));
 userContractRoutes.post('/:publicId/accept-completion', (c) => userContractController.acceptCompletion(c));
 userContractRoutes.post('/:publicId/request-revision', (c) => userContractController.requestRevision(c));

@@ -7,6 +7,7 @@ import { notificationService } from '../../services/notification.service.js';
 import { oauthService } from '../../services/oauth.service.js';
 import { env } from '../../config/env.js';
 import { RegisterSchema, LoginSchema, ForgotPasswordSchema, ResetPasswordSchema, } from '../../types/auth.types.js';
+import { buildDeveloperOnboardingStatus } from '../../utils/developer-onboarding.js';
 // ─── Helper: pick only safe fields to send back to clients ────────────────────
 function pickDeveloperAuthProfile(dev) {
     return {
@@ -392,7 +393,10 @@ export class DeveloperAuthController {
             return c.json({
                 success: true,
                 message: 'User fetched successfully',
-                data: { user: pickDeveloperPublicProfile(developer) },
+                data: {
+                    user: pickDeveloperPublicProfile(developer),
+                    onboarding: buildDeveloperOnboardingStatus(developer),
+                },
             });
         }
         catch (error) {

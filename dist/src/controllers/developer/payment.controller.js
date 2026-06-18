@@ -1,29 +1,61 @@
 import { db } from '../../db/index.js';
 import { developers, developerPayments } from '../../db/schema.js';
 import { eq } from 'drizzle-orm';
-import crypto from 'crypto';
 import { paymentService } from '../../services/payment.service.js';
 import { env } from '../../config/env.js';
-import { developerPayoutController } from './payout.controller.js';
+import { cashfreeCheckoutMode } from '../../config/cashfree.js';
 import { contractService } from '../../services/contract.service.js';
+function planDates(billingCycle) {
+    const startDate = new Date();
+    const endDate = new Date();
+    if (billingCycle === 'yearly') {
+        endDate.setFullYear(endDate.getFullYear() + 1);
+    }
+    else {
+        endDate.setMonth(endDate.getMonth() + 1);
+    }
+    return { startDate, endDate };
+}
+async function applyDeveloperSubscription(input) {
+    const [existing] = await db
+        .select({ status: developerPayments.status })
+        .from(developerPayments)
+        .where(eq(developerPayments.orderId, input.orderId))
+        .limit(1);
+    if (existing?.status === 'completed')
+        return;
+    const { startDate, endDate } = planDates(input.billingCycle);
+    await db
+        .update(developers)
+        .set({
+        plan: input.plan,
+        planBillingCycle: input.billingCycle,
+        planStartDate: startDate,
+        planEndDate: endDate,
+        updatedAt: new Date(),
+    })
+        .where(eq(developers.id, input.developerId));
+    await db
+        .update(developerPayments)
+        .set({ status: 'completed', paymentId: input.paymentId, completedAt: new Date() })
+        .where(eq(developerPayments.orderId, input.orderId));
+}
 export class PaymentController {
-    // ── Get Pricing Information ────────────────────────────────────────────────
     getPricing(c) {
         return c.json({
             success: true,
             data: {
                 pro: {
                     monthly: env.PRO_MONTHLY_PRICE,
-                    yearly: env.PRO_YEARLY_PRICE
+                    yearly: env.PRO_YEARLY_PRICE,
                 },
                 ultimate: {
                     monthly: env.ULTIMATE_MONTHLY_PRICE,
-                    yearly: env.ULTIMATE_YEARLY_PRICE
-                }
-            }
+                    yearly: env.ULTIMATE_YEARLY_PRICE,
+                },
+            },
         });
     }
-    // ── Create Razorpay Order ──────────────────────────────────────────────────
     async createSubscriptionOrder(c) {
         const jwtUser = c.get('user');
         if (!jwtUser || jwtUser.role !== 'developer') {
@@ -45,26 +77,39 @@ export class PaymentController {
             return c.json({ success: false, error: 'Invalid plan selected' }, 400);
         }
         try {
-            const order = await paymentService.createOrder(amount, {
+            const [dev] = await db
+                .select({ email: developers.email, phone: developers.phone, name: developers.name })
+                .from(developers)
+                .where(eq(developers.id, jwtUser.id))
+                .limit(1);
+            if (!dev)
+                return c.json({ success: false, error: 'Developer not found' }, 404);
+            const order = await paymentService.createSubscriptionOrder(amount, {
                 developerId: String(jwtUser.id),
                 plan: String(plan),
                 billingCycle: String(billingCycle),
+            }, {
+                id: `dev_${jwtUser.id}`,
+                phone: dev.phone ?? '9999999999',
+                email: dev.email,
+                name: dev.name ?? undefined,
             });
             await db.insert(developerPayments).values({
                 developerId: jwtUser.id,
-                orderId: order.id,
+                orderId: order.orderId,
                 plan: String(plan),
                 billingCycle: String(billingCycle),
-                amount: amount,
+                amount,
             });
             return c.json({
                 success: true,
                 data: {
-                    orderId: order.id,
+                    orderId: order.orderId,
+                    paymentSessionId: order.paymentSessionId,
                     amount: order.amount,
                     currency: order.currency,
-                    key: env.RAZORPAY_KEY_ID // send key for frontend to initiate payment
-                }
+                    cashfreeMode: cashfreeCheckoutMode(),
+                },
             });
         }
         catch (error) {
@@ -72,46 +117,28 @@ export class PaymentController {
             return c.json({ success: false, error: 'Failed to create payment order' }, 500);
         }
     }
-    // ── Pre-Webhook Quick Verification (Optional/Fallback) ────────────────────
     async verifyPaymentClientSide(c) {
-        // Sometimes webhooks are delayed, we can optionally have the client call this
-        // to immediately mark payment successful if signature matches.
         const body = await c.req.json().catch(() => null);
-        if (!body || !body.razorpay_order_id || !body.razorpay_payment_id || !body.razorpay_signature) {
-            return c.json({ success: false, error: 'Missing payment details' }, 400);
+        if (!body || !body.order_id) {
+            return c.json({ success: false, error: 'Missing order id' }, 400);
         }
-        // Validate client signature using key secret
-        const { razorpay_order_id, razorpay_payment_id, razorpay_signature, plan, billingCycle } = body;
+        const { order_id: orderId, plan, billingCycle } = body;
         try {
-            const expectedSignature = crypto
-                .createHmac('sha256', env.RAZORPAY_KEY_SECRET)
-                .update(`${razorpay_order_id}|${razorpay_payment_id}`)
-                .digest('hex');
-            if (expectedSignature !== razorpay_signature) {
-                return c.json({ success: false, error: 'Invalid payment signature' }, 400);
+            const order = await paymentService.fetchOrder(orderId);
+            if (order.order_status !== 'PAID') {
+                return c.json({ success: false, error: 'Payment is not completed yet' }, 400);
             }
             const jwtUser = c.get('user');
             if (!jwtUser)
                 return c.json({ success: false, error: 'Unauthorized' }, 401);
-            const { startDate, endDate } = (() => {
-                const s = new Date();
-                const e = new Date();
-                billingCycle === 'yearly' ? e.setFullYear(e.getFullYear() + 1) : e.setMonth(e.getMonth() + 1);
-                return { startDate: s, endDate: e };
-            })();
-            // Update plan immediately for responsive UI
-            await db.update(developers)
-                .set({
-                plan: plan,
-                planBillingCycle: billingCycle,
-                planStartDate: startDate,
-                planEndDate: endDate,
-                updatedAt: new Date()
-            })
-                .where(eq(developers.id, jwtUser.id));
-            await db.update(developerPayments)
-                .set({ status: 'completed', paymentId: razorpay_payment_id, completedAt: new Date() })
-                .where(eq(developerPayments.orderId, razorpay_order_id));
+            const paymentId = order.cf_order_id ? String(order.cf_order_id) : orderId;
+            await applyDeveloperSubscription({
+                developerId: jwtUser.id,
+                orderId,
+                paymentId,
+                plan,
+                billingCycle,
+            });
             return c.json({ success: true, message: 'Payment verified and plan updated!' });
         }
         catch (err) {
@@ -119,62 +146,53 @@ export class PaymentController {
             return c.json({ success: false, error: 'Payment verification failed' }, 500);
         }
     }
-    // ── Razorpay Webhook Endpoint ─────────────────────────────────────────────
-    async razorpayWebhook(c) {
-        // We get raw body for signature verification
+    async cashfreeWebhook(c) {
         let bodyString = '';
         try {
             bodyString = await c.req.text();
         }
-        catch (e) {
+        catch {
             return c.json({ error: 'Failed to read request body' }, 400);
         }
-        const signature = c.req.header('x-razorpay-signature');
-        if (!signature || !paymentService.verifyWebhookSignature(bodyString, signature)) {
+        const signature = c.req.header('x-webhook-signature');
+        const timestamp = c.req.header('x-webhook-timestamp');
+        if (!signature || !timestamp) {
+            return c.json({ error: 'Missing webhook signature headers' }, 401);
+        }
+        let webhookEvent;
+        try {
+            webhookEvent = paymentService.verifyWebhookSignature(signature, bodyString, timestamp);
+        }
+        catch {
             return c.json({ error: 'Invalid webhook signature' }, 401);
         }
         try {
-            const event = JSON.parse(bodyString);
-            // Handle Payment Captured
-            if (event.event === 'payment.captured') {
-                const payment = event.payload.payment.entity;
-                const { notes } = payment;
-                if (notes && notes.entityType === 'marketplace_contract' && notes.contractId) {
+            const event = webhookEvent.object;
+            const eventType = webhookEvent.type || event.type || '';
+            if (eventType === 'PAYMENT_SUCCESS_WEBHOOK' || eventType === 'PAYMENT_SUCCESS') {
+                const order = event.data?.order;
+                const payment = event.data?.payment;
+                if (!order?.order_id || !payment?.cf_payment_id) {
+                    return c.json({ status: 'ok' });
+                }
+                const tags = order.order_tags ?? {};
+                const paymentId = String(payment.cf_payment_id);
+                const amountPaise = Math.round((payment.payment_amount ?? 0) * 100);
+                if (tags.entityType === 'marketplace_contract' && tags.contractId) {
                     await contractService.onEscrowPaymentCaptured({
-                        orderId: payment.order_id,
-                        paymentId: payment.id,
-                        amount: typeof payment.amount === 'number' ? payment.amount : parseInt(String(payment.amount), 10),
+                        orderId: order.order_id,
+                        paymentId,
+                        amount: amountPaise,
                     });
                 }
-                else if (notes && notes.developerId && notes.plan && notes.billingCycle) {
-                    const devId = parseInt(notes.developerId, 10);
-                    const { startDate, endDate } = (() => {
-                        const s = new Date();
-                        const e = new Date();
-                        notes.billingCycle === 'yearly' ? e.setFullYear(e.getFullYear() + 1) : e.setMonth(e.getMonth() + 1);
-                        return { startDate: s, endDate: e };
-                    })();
-                    await db.update(developers)
-                        .set({
-                        plan: notes.plan,
-                        planBillingCycle: notes.billingCycle,
-                        planStartDate: startDate,
-                        planEndDate: endDate,
-                        updatedAt: new Date()
-                    })
-                        .where(eq(developers.id, devId));
-                    await db.update(developerPayments)
-                        .set({ status: 'completed', paymentId: payment.id, completedAt: new Date() })
-                        .where(eq(developerPayments.orderId, payment.order_id));
-                }
-            }
-            const validationEvents = new Set(['fund_account.validation.completed', 'fund_account.validation.failed']);
-            if (validationEvents.has(event.event)) {
-                const payload = event.payload;
-                const wrap = payload?.['fund_account.validation'];
-                const validationEntity = wrap?.entity;
-                if (validationEntity) {
-                    await developerPayoutController.applyValidationFromWebhookEntity(validationEntity);
+                else if (tags.entityType === 'developer_subscription' && tags.developerId && tags.plan && tags.billingCycle) {
+                    await applyDeveloperSubscription({
+                        developerId: parseInt(tags.developerId, 10),
+                        orderId: order.order_id,
+                        paymentId,
+                        plan: tags.plan,
+                        billingCycle: tags.billingCycle,
+                    });
                 }
             }
             return c.json({ status: 'ok' });

@@ -2,6 +2,8 @@ import { Hono } from 'hono';
 import { publicProductController } from '../../controllers/public/product.controller.js';
 import { authMiddleware, optionalAuthMiddleware } from '../../middleware/auth.middleware.js';
 const publicProductRoutes = new Hono();
+publicProductRoutes.get('/categories/list', (c) => publicProductController.listCategories(c));
+publicProductRoutes.get('/', optionalAuthMiddleware, (c) => publicProductController.listLive(c));
 publicProductRoutes.get('/by-id/:id/contract-pricing', optionalAuthMiddleware, (c) => publicProductController.getContractPricingById(c));
 publicProductRoutes.get('/card/:id', optionalAuthMiddleware, (c) => publicProductController.getCardById(c));
 publicProductRoutes.get('/:slug', optionalAuthMiddleware, (c) => publicProductController.getBySlug(c));

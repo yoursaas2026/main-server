@@ -3,7 +3,7 @@ import { db } from '../db/index.js';
 import { contractPayments, contracts, developers } from '../db/schema.js';
 import { env } from '../config/env.js';
 import { paymentService } from './payment.service.js';
-import { razorpayXPayoutService } from './razorpay-x-payout.service.js';
+import { cashfreePayoutService } from './cashfree-payout.service.js';
 
 export type ContractSettlementSplit = {
     refundClientPaise: number;
@@ -13,7 +13,7 @@ export type ContractSettlementSplit = {
 
 type SettlementMeta = {
     reason: string;
-    refunds: { paymentId: string; refundId: string; amountPaise: number }[];
+    refunds: { orderId: string; refundId: string; amountPaise: number }[];
     payout: { id: string; status: string; amountPaise: number } | null;
     errors: string[];
 };
@@ -80,8 +80,8 @@ export const contractSettlementService = {
     },
 
     async refundClient(contractId: number, amountPaise: number, meta: SettlementMeta): Promise<void> {
-        if (!env.RAZORPAY_KEY_ID || !env.RAZORPAY_KEY_SECRET) {
-            meta.errors.push('Razorpay keys missing — cannot refund client.');
+        if (!env.CASHFREE_PG_CLIENT_ID || !env.CASHFREE_PG_CLIENT_SECRET) {
+            meta.errors.push('Cashfree PG keys missing — cannot refund client.');
             return;
         }
 
@@ -94,29 +94,31 @@ export const contractSettlementService = {
         let remaining = amountPaise;
         for (const pay of payments) {
             if (remaining <= 0) break;
-            if (!pay.paymentId) continue;
+            if (!pay.orderId) continue;
             const alreadyRefunded = pay.refundAmountPaise ?? 0;
             const refundable = pay.amountPaise - alreadyRefunded;
             if (refundable <= 0) continue;
 
             const chunk = Math.min(remaining, refundable);
             try {
-                const refund = (await paymentService.refundPayment(pay.paymentId, chunk, {
-                    contractId: String(contractId),
-                    purpose: 'contract_settlement',
-                })) as { id?: string };
+                const refund = (await paymentService.refundPayment(pay.orderId, chunk, 'contract_settlement')) as {
+                    cf_refund_id?: string;
+                    refund_id?: string;
+                };
+
+                const refundId = refund.cf_refund_id ?? refund.refund_id ?? 'unknown';
 
                 await db
                     .update(contractPayments)
                     .set({
-                        refundId: refund.id ?? pay.refundId,
+                        refundId: refundId,
                         refundAmountPaise: alreadyRefunded + chunk,
                     })
                     .where(eq(contractPayments.id, pay.id));
 
                 meta.refunds.push({
-                    paymentId: pay.paymentId,
-                    refundId: refund.id ?? 'unknown',
+                    orderId: pay.orderId,
+                    refundId,
                     amountPaise: chunk,
                 });
                 remaining -= chunk;
@@ -138,14 +140,14 @@ export const contractSettlementService = {
         amountPaise: number,
         meta: SettlementMeta
     ): Promise<void> {
-        if (!razorpayXPayoutService.isConfigured()) {
-            meta.errors.push('RazorpayX payout not configured.');
+        if (!cashfreePayoutService.isConfigured()) {
+            meta.errors.push('Cashfree Payouts not configured.');
             return;
         }
 
         const [dev] = await db.select().from(developers).where(eq(developers.id, developerId)).limit(1);
-        if (!dev?.payoutRazorpayFundAccountId) {
-            meta.errors.push('Developer has no Razorpay fund account — complete payout bank verification first.');
+        if (!dev?.payoutCashfreeBeneficiaryId) {
+            meta.errors.push('Developer has no Cashfree beneficiary — complete payout bank verification first.');
             return;
         }
         if (dev.payoutBankValidationStatus !== 'completed' || dev.payoutBankValidationAccountStatus !== 'valid') {
@@ -154,14 +156,17 @@ export const contractSettlementService = {
         }
 
         try {
-            const payout = await razorpayXPayoutService.createPayout({
-                fundAccountId: dev.payoutRazorpayFundAccountId,
+            const payout = await cashfreePayoutService.createTransfer({
+                beneficiaryId: dev.payoutCashfreeBeneficiaryId,
                 amountPaise,
-                referenceId: `ys_ctr_${contractId}`,
-                narration: `YS contract ${publicId.slice(0, 8)}`,
-                notes: { contractId: String(contractId), developerId: String(developerId) },
+                transferId: `ys_ctr_${contractId}`,
+                remarks: `YS contract ${publicId.slice(0, 8)}`,
             });
-            meta.payout = { id: payout.id, status: payout.status, amountPaise };
+            meta.payout = {
+                id: payout.cf_transfer_id ?? payout.transfer_id ?? 'unknown',
+                status: payout.status ?? 'PENDING',
+                amountPaise,
+            };
         } catch (e) {
             meta.errors.push(e instanceof Error ? e.message : 'Payout failed');
         }

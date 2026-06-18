@@ -7,6 +7,7 @@ import { notificationService } from '../../services/notification.service.js';
 import { oauthService } from '../../services/oauth.service.js';
 import { env } from '../../config/env.js';
 import { RegisterSchema, LoginSchema, ForgotPasswordSchema, ResetPasswordSchema, } from '../../types/auth.types.js';
+import { buildClientOnboardingStatus } from '../../utils/client-onboarding.js';
 // ─── Helper: pick only safe fields to send back to clients ────────────────────
 function pickClientAuthProfile(client) {
     return {
@@ -360,7 +361,10 @@ export class UserAuthController {
             return c.json({
                 success: true,
                 message: 'User fetched successfully',
-                data: { user: pickClientPublicProfile(client) },
+                data: {
+                    user: pickClientPublicProfile(client),
+                    onboarding: buildClientOnboardingStatus(client),
+                },
             });
         }
         catch (error) {

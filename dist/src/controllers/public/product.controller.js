@@ -4,6 +4,7 @@ import { clients, developerProducts, developers, productCategories, productRevie
 import { absoluteMediaUrl } from '../../services/stream-chat.service.js';
 import { env } from '../../config/env.js';
 import { CLIENT_NON_REFUNDABLE_FEE_BPS, contractCheckoutBreakdown, } from '../../services/contract.service.js';
+import { listLiveMarketplaceProducts } from '../../services/client-recommendations.js';
 function parseJson(value, fallback) {
     if (!value)
         return fallback;
@@ -18,6 +19,56 @@ function normalizeListingStatus(raw) {
     return (raw || '').toLowerCase() === 'live' ? 'live' : 'draft';
 }
 export class PublicProductController {
+    async listCategories(c) {
+        try {
+            const rows = await db
+                .select({ id: productCategories.id, name: productCategories.name })
+                .from(productCategories)
+                .orderBy(productCategories.name);
+            return c.json({ success: true, data: { categories: rows } });
+        }
+        catch (error) {
+            console.error('[PublicProduct] listCategories error:', error);
+            return c.json({ success: false, error: 'Failed to fetch categories' }, 500);
+        }
+    }
+    async listLive(c) {
+        const limit = Math.min(Math.max(parseInt(c.req.query('limit') || '24', 10), 1), 100);
+        const offset = Math.max(parseInt(c.req.query('offset') || '0', 10), 0);
+        const search = c.req.query('search') || '';
+        const categoryIdRaw = c.req.query('categoryId');
+        const categoryId = categoryIdRaw ? parseInt(categoryIdRaw, 10) : undefined;
+        const sortRaw = (c.req.query('sort') || 'recommended').toLowerCase();
+        const sort = sortRaw === 'newest' || sortRaw === 'name' || sortRaw === 'recommended'
+            ? sortRaw
+            : 'recommended';
+        const clientId = this.getCurrentClientId(c);
+        try {
+            const { products, total } = await listLiveMarketplaceProducts({
+                limit,
+                offset,
+                search,
+                categoryId: Number.isInteger(categoryId) && categoryId > 0 ? categoryId : undefined,
+                clientId,
+                sort: clientId ? sort : sort === 'recommended' ? 'newest' : sort,
+            });
+            const mapped = products.map((p) => ({
+                ...p,
+                coverImageUrl: absoluteMediaUrl(p.coverImageUrl) ?? null,
+            }));
+            return c.json({
+                success: true,
+                data: {
+                    products: mapped,
+                    pagination: { limit, offset, total, count: mapped.length },
+                },
+            });
+        }
+        catch (error) {
+            console.error('[PublicProduct] listLive error:', error);
+            return c.json({ success: false, error: 'Failed to fetch products' }, 500);
+        }
+    }
     /** Minimal live listing for chat tag cards (`<YourSaaS>{id}</YourSaaS>`). */
     async getCardById(c) {
         const id = Number(c.req.param('id'));

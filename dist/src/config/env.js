@@ -41,12 +41,16 @@ export const env = {
     // Security
     CORS_ORIGIN: process.env.CORS_ORIGIN ||
         'http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003',
-    // Razorpay (Checkout + RazorpayX Account Validation use the same Key ID / Secret when X is on the account)
-    RAZORPAY_KEY_ID: process.env.RAZORPAY_KEY_ID || '',
-    RAZORPAY_KEY_SECRET: process.env.RAZORPAY_KEY_SECRET || '',
-    RAZORPAY_WEBHOOK_SECRET: process.env.RAZORPAY_WEBHOOK_SECRET || '',
-    /** RazorpayX current account number used as `source_account_number` for bank validations (live mode; not available in test mode per Razorpay). */
-    RAZORPAYX_SOURCE_ACCOUNT_NUMBER: process.env.RAZORPAYX_SOURCE_ACCOUNT_NUMBER || '',
+    // Cashfree Payment Gateway — developer subscriptions + marketplace escrow
+    CASHFREE_PG_CLIENT_ID: process.env.CASHFREE_PG_CLIENT_ID || '',
+    CASHFREE_PG_CLIENT_SECRET: process.env.CASHFREE_PG_CLIENT_SECRET || '',
+    /** sandbox | production */
+    CASHFREE_PG_ENV: process.env.CASHFREE_PG_ENV || 'sandbox',
+    // Cashfree Payouts — developer bank verification + contract settlement transfers
+    CASHFREE_PAYOUT_CLIENT_ID: process.env.CASHFREE_PAYOUT_CLIENT_ID || '',
+    CASHFREE_PAYOUT_CLIENT_SECRET: process.env.CASHFREE_PAYOUT_CLIENT_SECRET || '',
+    /** sandbox | production */
+    CASHFREE_PAYOUT_ENV: process.env.CASHFREE_PAYOUT_ENV || 'sandbox',
     // Pricing
     PRO_MONTHLY_PRICE: parseInt(process.env.PRO_MONTHLY_PRICE || '29'),
     PRO_YEARLY_PRICE: parseInt(process.env.PRO_YEARLY_PRICE || '279'),
@@ -64,7 +68,7 @@ export const env = {
     CONTRACT_PLATFORM_COMMISSION_PERCENT: Math.min(100, Math.max(0, parseInt(process.env.CONTRACT_PLATFORM_COMMISSION_PERCENT || '20', 10))),
     /** Days client has to accept / dispute after developer submits (auto-complete if silent). */
     CONTRACT_CLIENT_DECISION_DAYS: parseInt(process.env.CONTRACT_CLIENT_DECISION_DAYS || '14', 10),
-    /** When true, attempt Razorpay refunds + RazorpayX payouts after contract settlement (requires keys + validated developer bank). */
+    /** When true, attempt Cashfree refunds + payouts after contract settlement (requires keys + validated developer bank). */
     CONTRACT_AUTO_SETTLEMENT_ENABLED: process.env.CONTRACT_AUTO_SETTLEMENT_ENABLED === 'true',
     /** Background job interval for auto-completing submitted contracts past client deadline (ms). */
     CONTRACT_AUTO_COMPLETE_INTERVAL_MS: Math.max(60_000, parseInt(process.env.CONTRACT_AUTO_COMPLETE_INTERVAL_MS || '300000', 10)),

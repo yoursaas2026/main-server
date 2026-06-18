@@ -1,0 +1,10 @@
+import { Hono } from 'hono';
+import { authMiddleware } from '../../middleware/auth.middleware.js';
+import { userProfileController } from '../../controllers/user/profile.controller.js';
+const userProfileRoutes = new Hono();
+userProfileRoutes.get('/', authMiddleware, (c) => userProfileController.getProfile(c));
+userProfileRoutes.put('/', authMiddleware, (c) => userProfileController.updateProfile(c));
+userProfileRoutes.get('/recommendations', authMiddleware, (c) => userProfileController.getRecommendations(c));
+userProfileRoutes.post('/saved-products', authMiddleware, (c) => userProfileController.toggleSavedProduct(c));
+userProfileRoutes.post('/track', authMiddleware, (c) => userProfileController.trackListingEvent(c));
+export default userProfileRoutes;
