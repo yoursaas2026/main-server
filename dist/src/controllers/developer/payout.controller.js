@@ -2,8 +2,7 @@ import { z } from 'zod';
 import { db } from '../../db/index.js';
 import { developers } from '../../db/schema.js';
 import { and, eq } from 'drizzle-orm';
-import { cashfreePayoutService } from '../../services/cashfree-payout.service.js';
-import { CashfreePayout } from '../../config/cashfree.js';
+import { cashfreePayoutService, verifyPayoutWebhookV1, verifyPayoutWebhookV2, } from '../../services/cashfree-payout.service.js';
 import { env } from '../../config/env.js';
 const IFSC_RE = /^[A-Z]{4}0[A-Z0-9]{6}$/;
 function normalizeIndiaPhone(raw) {
@@ -280,7 +279,7 @@ export class DeveloperPayoutController {
             return c.json({ success: false, error: msg }, 400);
         }
     }
-    /** Public Cashfree Payouts webhook (V2) — must not sit behind auth middleware. */
+    /** Public Cashfree Payouts webhook (V1 body signature or V2 header signature). */
     async cashfreeWebhook(c) {
         let bodyString = '';
         try {
@@ -289,25 +288,28 @@ export class DeveloperPayoutController {
         catch {
             return c.json({ error: 'Failed to read request body' }, 400);
         }
-        if (!env.CASHFREE_PAYOUT_CLIENT_SECRET) {
+        const secret = env.CASHFREE_PAYOUT_CLIENT_SECRET;
+        if (!secret) {
             return c.json({ error: 'Cashfree Payouts not configured on server (CASHFREE_PAYOUT_CLIENT_SECRET)' }, 503);
         }
-        const signature = c.req.header('x-webhook-signature');
+        const headerSig = c.req.header('x-webhook-signature');
         const timestamp = c.req.header('x-webhook-timestamp');
-        if (!signature || !timestamp) {
-            console.warn('[DeveloperPayout] webhook missing signature headers');
-            return c.json({ error: 'Missing x-webhook-signature or x-webhook-timestamp' }, 401);
-        }
         try {
-            CashfreePayout.PayoutVerifyWebhookSignature(signature, bodyString, timestamp);
+            if (headerSig && timestamp) {
+                verifyPayoutWebhookV2(headerSig, bodyString, timestamp);
+            }
+            else {
+                verifyPayoutWebhookV1(bodyString, secret);
+            }
         }
         catch (err) {
-            console.warn('[DeveloperPayout] webhook signature mismatch:', err instanceof Error ? err.message : err);
+            const msg = err instanceof Error ? err.message : 'Verification failed';
+            console.warn('[DeveloperPayout] webhook rejected:', msg);
             return c.json({
-                error: 'Invalid payout webhook signature — use CASHFREE_PAYOUT_CLIENT_SECRET from the same Cashfree Payouts app (sandbox vs production must match)',
+                error: 'Payout webhook verification failed. For V2 select V2 in dashboard and set CASHFREE_PAYOUT_CLIENT_SECRET (oldest active key for V1).',
+                detail: msg,
             }, 401);
         }
-        // Acknowledge now; transfer status updates can be processed here later.
         return c.json({ status: 'ok' });
     }
 }
