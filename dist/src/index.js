@@ -118,7 +118,7 @@ console.log(`
   - Google OAuth: ${env.GOOGLE_CLIENT_ID ? '✅' : '❌'}
   - Microsoft OAuth: ${env.MICROSOFT_CLIENT_ID ? '✅' : '❌'}
   - Apple OAuth: ${env.APPLE_CLIENT_ID ? '✅' : '❌'}
-📧 Email Service: ${env.BREVO_API_KEY ? '✅ Brevo' : '❌'}
+📧 Email Service: ${env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS ? `✅ Mailu (${env.SMTP_HOST})` : '❌ (set SMTP_HOST, SMTP_USER, SMTP_PASS)'}
 💬 Stream Chat: ${env.STREAM_API_KEY && env.STREAM_API_SECRET ? '✅' : '❌ (set STREAM_API_KEY + STREAM_API_SECRET)'}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `);

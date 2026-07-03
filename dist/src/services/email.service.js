@@ -1,40 +1,59 @@
-import axios from 'axios';
+import nodemailer from 'nodemailer';
 import { env } from '../config/env.js';
-class BrevoEmailService {
-    apiKey;
-    apiUrl = 'https://api.brevo.com/v3/smtp/email';
-    constructor() {
-        this.apiKey = env.BREVO_API_KEY;
+class MailuEmailService {
+    transporter = null;
+    marketingTransporter = null;
+    createTransporter(user, pass) {
+        return nodemailer.createTransport({
+            host: env.SMTP_HOST,
+            port: env.SMTP_PORT,
+            secure: env.SMTP_SECURE,
+            auth: { user, pass },
+        });
     }
-    async sendEmail({ to, subject, htmlContent, textContent }) {
+    getTransporter() {
+        if (!env.SMTP_HOST || !env.SMTP_USER || !env.SMTP_PASS) {
+            return null;
+        }
+        if (!this.transporter) {
+            this.transporter = this.createTransporter(env.SMTP_USER, env.SMTP_PASS);
+        }
+        return this.transporter;
+    }
+    getMarketingTransporter() {
+        if (!env.SMTP_HOST || !env.SMTP_MARKETING_USER || !env.SMTP_MARKETING_PASS) {
+            return this.getTransporter();
+        }
+        if (!this.marketingTransporter) {
+            this.marketingTransporter = this.createTransporter(env.SMTP_MARKETING_USER, env.SMTP_MARKETING_PASS);
+        }
+        return this.marketingTransporter;
+    }
+    async sendEmail({ to, subject, htmlContent, textContent, fromEmail, fromName, marketing = false, }) {
+        const transporter = marketing ? this.getMarketingTransporter() : this.getTransporter();
+        if (!transporter) {
+            console.error('[Mail] SMTP not configured — set SMTP_HOST, SMTP_USER, SMTP_PASS');
+            return false;
+        }
         try {
-            const response = await axios.post(this.apiUrl, {
-                sender: {
-                    name: env.BREVO_SENDER_NAME,
-                    email: env.BREVO_SENDER_EMAIL,
+            await transporter.sendMail({
+                from: {
+                    name: fromName ?? env.SMTP_FROM_NAME,
+                    address: fromEmail ?? env.SMTP_FROM_EMAIL,
                 },
-                to: [
-                    {
-                        email: to,
-                    },
-                ],
+                to,
                 subject,
-                htmlContent,
-                textContent: textContent || subject,
-            }, {
-                headers: {
-                    'api-key': this.apiKey,
-                    'Content-Type': 'application/json',
-                },
+                html: htmlContent,
+                text: textContent ?? subject,
             });
-            return response.status === 201;
+            return true;
         }
         catch (error) {
-            console.error('Brevo email error:', error);
+            console.error('[Mail] send error:', error);
             return false;
         }
     }
-    async sendWelcomeEmail(email, name) {
+    async sendWelcomeEmail(email, name, appUrl = env.DEVELOPER_PORTAL_URL) {
         const htmlContent = `
             <!DOCTYPE html>
             <html>
@@ -54,16 +73,9 @@ class BrevoEmailService {
                     </div>
                     <div class="content">
                         <h2>Hi ${name}! 👋</h2>
-                        <p>We're thrilled to have you join the YourSaaS developer community!</p>
-                        <p>You're now part of a growing community of 5,000+ developers building amazing things together.</p>
-                        <p>Here's what you can do next:</p>
-                        <ul>
-                            <li>Complete your profile</li>
-                            <li>Explore available projects</li>
-                            <li>Connect with other developers</li>
-                            <li>Start earning</li>
-                        </ul>
-                        <a href="${env.DEVELOPER_PORTAL_URL}/dashboard" class="button">Go to Dashboard</a>
+                        <p>We're thrilled to have you join the YourSaaS community!</p>
+                        <p>Your account is ready — explore the platform and get started.</p>
+                        <a href="${appUrl}/dashboard" class="button">Go to Dashboard</a>
                     </div>
                 </div>
             </body>
@@ -71,7 +83,7 @@ class BrevoEmailService {
         `;
         return await this.sendEmail({
             to: email,
-            subject: 'Welcome to YourSaaS Community! 🎉',
+            subject: 'Welcome to YourSaaS! 🎉',
             htmlContent,
         });
     }
@@ -116,8 +128,8 @@ class BrevoEmailService {
             htmlContent,
         });
     }
-    async sendEmailVerification(email, name, verificationToken) {
-        const verificationUrl = `${env.DEVELOPER_PORTAL_URL}/verify-email?token=${verificationToken}`;
+    async sendEmailVerification(email, name, verificationToken, appUrl = env.DEVELOPER_PORTAL_URL) {
+        const verificationUrl = `${appUrl}/verify-email?token=${verificationToken}`;
         const htmlContent = `
             <!DOCTYPE html>
             <html>
@@ -192,42 +204,47 @@ class BrevoEmailService {
             htmlContent,
         });
     }
-    async subscribeToNewsletter(input) {
-        if (!this.apiKey) {
-            console.error('[Brevo] Newsletter subscribe skipped — BREVO_API_KEY missing');
-            return false;
-        }
-        try {
-            const payload = {
-                email: input.email,
-                attributes: {
-                    FIRSTNAME: input.firstName,
-                    LASTNAME: input.lastName,
-                },
-                updateEnabled: true,
-            };
-            const listId = env.BREVO_NEWSLETTER_LIST_ID;
-            if (listId) {
-                payload.listIds = [listId];
-            }
-            const response = await axios.post('https://api.brevo.com/v3/contacts', payload, {
-                headers: {
-                    'api-key': this.apiKey,
-                    'Content-Type': 'application/json',
-                },
-            });
-            return response.status === 201 || response.status === 204;
-        }
-        catch (error) {
-            if (axios.isAxiosError(error) && error.response?.status === 400) {
-                const message = String(error.response.data?.message ?? '');
-                if (message.toLowerCase().includes('already exist')) {
-                    return true;
-                }
-            }
-            console.error('Brevo newsletter subscribe error:', error);
-            return false;
-        }
+    async sendNewsletterWelcomeEmail(email, firstName, unsubscribeUrl) {
+        const htmlContent = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+                    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                    .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }
+                    .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px; }
+                    .footer { font-size: 12px; color: #666; margin-top: 24px; }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header">
+                        <h1>You're subscribed!</h1>
+                    </div>
+                    <div class="content">
+                        <h2>Hi ${firstName},</h2>
+                        <p>Thanks for subscribing to the YourSaaS newsletter. We'll keep you updated on new products, developer stories, and platform news.</p>
+                        <p class="footer">
+                            <a href="${unsubscribeUrl}">Unsubscribe</a> from future marketing emails.
+                        </p>
+                    </div>
+                </div>
+            </body>
+            </html>
+        `;
+        return await this.sendEmail({
+            to: email,
+            subject: 'Welcome to the YourSaaS Newsletter',
+            htmlContent,
+            fromEmail: env.SMTP_MARKETING_USER
+                ? env.SMTP_MARKETING_FROM_EMAIL
+                : env.SMTP_FROM_EMAIL,
+            fromName: env.SMTP_MARKETING_USER
+                ? env.SMTP_MARKETING_FROM_NAME
+                : env.SMTP_FROM_NAME,
+            marketing: true,
+        });
     }
 }
-export const emailService = new BrevoEmailService();
+export const emailService = new MailuEmailService();

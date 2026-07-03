@@ -70,7 +70,7 @@ export class UserAuthController {
                 .returning();
             const token = generateToken({ id: newClient.id, email: newClient.email, role: 'client' });
             // Fire-and-forget — never block registration on email delivery
-            notificationService.sendWelcomeEmail(newClient.email, newClient.name);
+            notificationService.sendWelcomeEmail(newClient.email, newClient.name, env.USER_PORTAL_URL);
             const data = {
                 token,
                 user: pickClientAuthProfile(newClient),
@@ -173,7 +173,7 @@ export class UserAuthController {
             };
             [user] = await db.insert(clients).values(insertPayload).returning();
             // Fire-and-forget welcome email
-            notificationService.sendWelcomeEmail(user.email, user.name);
+            notificationService.sendWelcomeEmail(user.email, user.name, env.USER_PORTAL_URL);
         }
         else if (existingByProvider) {
             // Existing provider match — bump last login (non-blocking)

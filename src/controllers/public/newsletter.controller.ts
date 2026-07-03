@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
 import { z } from 'zod';
-import { emailService } from '../../services/email.service.js';
+import { newsletterService } from '../../services/newsletter.service.js';
 
 const subscribeSchema = z.object({
     firstName: z.string().trim().min(1, 'First name is required').max(80),
@@ -19,16 +19,30 @@ export class NewsletterController {
 
         const { firstName, lastName, email } = parsed.data;
 
-        try {
-            const ok = await emailService.subscribeToNewsletter({ firstName, lastName, email });
-            if (!ok) {
-                return c.json({ success: false, error: 'Newsletter signup is temporarily unavailable' }, 503);
-            }
-            return c.json({ success: true, message: 'Subscribed successfully' });
-        } catch (error) {
-            console.error('[Newsletter] subscribe error:', error);
-            return c.json({ success: false, error: 'Failed to subscribe' }, 500);
+        const result = await newsletterService.subscribe({ firstName, lastName, email, source: 'footer' });
+
+        if (!result.ok) {
+            return c.json({ success: false, error: 'Newsletter signup is temporarily unavailable' }, 503);
         }
+
+        return c.json({
+            success: true,
+            message: result.alreadySubscribed ? 'You are already subscribed' : 'Subscribed successfully',
+        });
+    }
+
+    async unsubscribe(c: Context) {
+        const token = c.req.query('token')?.trim();
+        if (!token) {
+            return c.json({ success: false, error: 'Missing unsubscribe token' }, 400);
+        }
+
+        const ok = await newsletterService.unsubscribe(token);
+        if (!ok) {
+            return c.json({ success: false, error: 'Invalid or expired unsubscribe link' }, 404);
+        }
+
+        return c.json({ success: true, message: 'You have been unsubscribed' });
     }
 }
 

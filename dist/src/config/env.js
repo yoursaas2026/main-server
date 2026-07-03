@@ -26,14 +26,19 @@ export const env = {
     APPLE_KEY_ID: process.env.APPLE_KEY_ID || '',
     APPLE_PRIVATE_KEY: process.env.APPLE_PRIVATE_KEY || '',
     APPLE_CALLBACK_URL: process.env.APPLE_CALLBACK_URL || 'http://localhost:3000/api/auth/apple/callback',
-    // Email - Brevo
-    BREVO_API_KEY: process.env.BREVO_API_KEY || '',
-    BREVO_SENDER_EMAIL: process.env.BREVO_SENDER_EMAIL || 'noreply@yoursaas.com',
-    BREVO_SENDER_NAME: process.env.BREVO_SENDER_NAME || 'YourSaaS',
-    /** Optional Brevo contact list ID for footer newsletter signups */
-    BREVO_NEWSLETTER_LIST_ID: process.env.BREVO_NEWSLETTER_LIST_ID
-        ? parseInt(process.env.BREVO_NEWSLETTER_LIST_ID, 10)
-        : undefined,
+    // Email — Mailu SMTP (use a Mailu authentication token as SMTP_PASS)
+    SMTP_HOST: process.env.SMTP_HOST || '',
+    SMTP_PORT: parseInt(process.env.SMTP_PORT || '465', 10),
+    SMTP_SECURE: process.env.SMTP_SECURE !== 'false',
+    SMTP_USER: process.env.SMTP_USER || '',
+    SMTP_PASS: process.env.SMTP_PASS || '',
+    SMTP_FROM_EMAIL: process.env.SMTP_FROM_EMAIL || 'noreply@yoursaas.in',
+    SMTP_FROM_NAME: process.env.SMTP_FROM_NAME || 'YourSaaS',
+    SMTP_MARKETING_FROM_EMAIL: process.env.SMTP_MARKETING_FROM_EMAIL || 'hello@yoursaas.in',
+    SMTP_MARKETING_FROM_NAME: process.env.SMTP_MARKETING_FROM_NAME || 'YourSaaS',
+    /** Optional separate Mailu auth token for marketing sends (e.g. hello@yoursaas.in). */
+    SMTP_MARKETING_USER: process.env.SMTP_MARKETING_USER || '',
+    SMTP_MARKETING_PASS: process.env.SMTP_MARKETING_PASS || '',
     // Frontend URLs
     DEVELOPER_PORTAL_URL: process.env.DEVELOPER_PORTAL_URL || 'http://localhost:3001',
     USER_PORTAL_URL: process.env.USER_PORTAL_URL || 'http://localhost:3002',

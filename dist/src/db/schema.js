@@ -358,3 +358,15 @@ export const contractPayments = pgTable('contract_payments', {
     createdAt: timestamp('created_at').defaultNow(),
     completedAt: timestamp('completed_at'),
 });
+/** Footer / marketing newsletter subscribers (stored locally, sent via Mailu). */
+export const newsletterSubscribers = pgTable('newsletter_subscribers', {
+    id: serial('id').primaryKey(),
+    email: varchar('email', { length: 255 }).unique().notNull(),
+    firstName: varchar('first_name', { length: 80 }).notNull(),
+    lastName: varchar('last_name', { length: 80 }).notNull(),
+    source: varchar('source', { length: 40 }).default('footer'),
+    unsubscribeToken: varchar('unsubscribe_token', { length: 64 }).unique().notNull(),
+    subscribedAt: timestamp('subscribed_at').defaultNow().notNull(),
+    unsubscribedAt: timestamp('unsubscribed_at'),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});

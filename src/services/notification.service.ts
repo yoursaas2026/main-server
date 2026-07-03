@@ -11,8 +11,8 @@ class NotificationService {
     /**
      * Sends a welcome email without blocking the calling request.
      */
-    sendWelcomeEmail(email: string, name: string): void {
-        emailService.sendWelcomeEmail(email, name).catch((err) => {
+    sendWelcomeEmail(email: string, name: string, appUrl?: string): void {
+        emailService.sendWelcomeEmail(email, name, appUrl).catch((err) => {
             console.error('[NotificationService] Failed to send welcome email to %s:', email, err);
         });
     }
