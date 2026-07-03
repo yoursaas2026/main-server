@@ -73,6 +73,8 @@ app.get('/', async (c) => {
         userAuth: '/api/user/auth',
         userChat: '/api/user/chat',
         developerChat: '/api/developer/chat',
+        adminMarketing: '/api/admin/marketing/users',
+        marketingPortal: '/api/marketing/auth',
         health: '/',
       },
     });
