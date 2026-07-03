@@ -246,5 +246,63 @@ class MailuEmailService {
             marketing: true,
         });
     }
+    async sendMarketingPortalWelcomeEmail(email, name, temporaryPassword) {
+        const portalUrl = env.MARKETING_PORTAL_URL;
+        const webmailUrl = env.MAIL_WEBMAIL_URL;
+        const htmlContent = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+                    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                    .header { background: linear-gradient(135deg, #6200EE 0%, #0064E0 100%); color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }
+                    .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px; }
+                    .button { display: inline-block; padding: 12px 30px; background: #6200EE; color: white; text-decoration: none; border-radius: 5px; margin-top: 16px; }
+                    .box { background: white; padding: 16px; border-radius: 8px; margin: 16px 0; }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header"><h1>Your Marketing Portal Access</h1></div>
+                    <div class="content">
+                        <h2>Hi ${name},</h2>
+                        <p>Your YourSaaS marketing team account has been created.</p>
+                        <div class="box">
+                            <p><strong>Marketing portal:</strong> <a href="${portalUrl}">${portalUrl}</a></p>
+                            <p><strong>Login email:</strong> ${email}</p>
+                            <p><strong>Temporary password:</strong> ${temporaryPassword}</p>
+                            <p><strong>Personal webmail:</strong> <a href="${webmailUrl}">${webmailUrl}</a></p>
+                        </div>
+                        <p>Use the same email and password for webmail once your mailbox is active on Mailu.</p>
+                        <a href="${portalUrl}" class="button">Open Marketing Portal</a>
+                        <p style="margin-top:20px;font-size:14px;color:#666;">Change your password after first login via Forgot password if needed.</p>
+                    </div>
+                </div>
+            </body>
+            </html>
+        `;
+        return await this.sendEmail({
+            to: email,
+            subject: 'Your YourSaaS Marketing Portal Access',
+            htmlContent,
+        });
+    }
+    async sendCampaignEmail(input) {
+        const footer = `
+            <p style="font-size:12px;color:#888;margin-top:32px;border-top:1px solid #eee;padding-top:16px;">
+                You received this email because you subscribed to YourSaaS updates.
+                <a href="${input.unsubscribeUrl}">Unsubscribe</a>
+            </p>
+        `;
+        return await this.sendEmail({
+            to: input.to,
+            subject: input.subject,
+            htmlContent: `${input.htmlContent}${footer}`,
+            fromEmail: input.fromEmail,
+            fromName: input.fromName,
+            marketing: true,
+        });
+    }
 }
 export const emailService = new MailuEmailService();

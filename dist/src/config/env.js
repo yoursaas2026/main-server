@@ -43,9 +43,11 @@ export const env = {
     DEVELOPER_PORTAL_URL: process.env.DEVELOPER_PORTAL_URL || 'http://localhost:3001',
     USER_PORTAL_URL: process.env.USER_PORTAL_URL || 'http://localhost:3002',
     ADMIN_PORTAL_URL: process.env.ADMIN_PORTAL_URL || 'http://localhost:3003',
+    MARKETING_PORTAL_URL: process.env.MARKETING_PORTAL_URL || 'http://localhost:3004',
+    MAIL_WEBMAIL_URL: process.env.MAIL_WEBMAIL_URL || 'https://mail.yoursaas.in/webmail',
     // Security
     CORS_ORIGIN: process.env.CORS_ORIGIN ||
-        'http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003',
+        'http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003,http://localhost:3004',
     // Cashfree Payment Gateway — developer subscriptions + marketplace escrow
     CASHFREE_PG_CLIENT_ID: process.env.CASHFREE_PG_CLIENT_ID || '',
     CASHFREE_PG_CLIENT_SECRET: process.env.CASHFREE_PG_CLIENT_SECRET || '',

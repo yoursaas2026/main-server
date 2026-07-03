@@ -25,6 +25,13 @@ import userContractRoutes from './routes/user/contract.routes.js';
 import userProfileRoutes from './routes/user/profile.routes.js';
 import developerContractRoutes from './routes/developer/contract.routes.js';
 import adminContractRoutes from './routes/admin/contract.routes.js';
+import adminMarketingRoutes from './routes/admin/marketing.routes.js';
+import {
+    marketingAuthRoutes,
+    marketingListsRoutes,
+    marketingTemplatesRoutes,
+    marketingCampaignsRoutes,
+} from './routes/marketing/index.js';
 import { startContractJobs } from './jobs/contract-jobs.js';
 
 const app = new Hono();
@@ -99,6 +106,11 @@ app.route('/api/user/chat', userChatRoutes);
 app.route('/api/user/contracts', userContractRoutes);
 app.route('/api/developer/contracts', developerContractRoutes);
 app.route('/api/admin/contracts', adminContractRoutes);
+app.route('/api/admin/marketing', adminMarketingRoutes);
+app.route('/api/marketing/auth', marketingAuthRoutes);
+app.route('/api/marketing/lists', marketingListsRoutes);
+app.route('/api/marketing/templates', marketingTemplatesRoutes);
+app.route('/api/marketing/campaigns', marketingCampaignsRoutes);
 
 // 404 handler
 app.notFound((c) => {

@@ -1,4 +1,4 @@
-import { pgTable, serial, text, timestamp, varchar, boolean, integer } from 'drizzle-orm/pg-core';
+import { pgTable, serial, text, timestamp, varchar, boolean, integer, unique } from 'drizzle-orm/pg-core';
 
 // Developer Table
 export const developers = pgTable('developers', {
@@ -407,10 +407,21 @@ export const contractPayments = pgTable('contract_payments', {
     completedAt: timestamp('completed_at'),
 });
 
-/** Footer / marketing newsletter subscribers (stored locally, sent via Mailu). */
-export const newsletterSubscribers = pgTable('newsletter_subscribers', {
+/** Footer / marketing newsletter subscribers (per list). */
+export const marketingLists = pgTable('marketing_lists', {
     id: serial('id').primaryKey(),
-    email: varchar('email', { length: 255 }).unique().notNull(),
+    name: varchar('name', { length: 120 }).notNull(),
+    description: text('description'),
+    isDefault: boolean('is_default').default(false),
+    createdByMarketingUserId: integer('created_by_marketing_user_id'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const marketingSubscribers = pgTable('marketing_subscribers', {
+    id: serial('id').primaryKey(),
+    listId: integer('list_id').references(() => marketingLists.id).notNull(),
+    email: varchar('email', { length: 255 }).notNull(),
     firstName: varchar('first_name', { length: 80 }).notNull(),
     lastName: varchar('last_name', { length: 80 }).notNull(),
     source: varchar('source', { length: 40 }).default('footer'),
@@ -418,4 +429,65 @@ export const newsletterSubscribers = pgTable('newsletter_subscribers', {
     subscribedAt: timestamp('subscribed_at').defaultNow().notNull(),
     unsubscribedAt: timestamp('unsubscribed_at'),
     updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    listEmailUnique: unique().on(table.listId, table.email),
+}));
+
+export const marketingUsers = pgTable('marketing_users', {
+    id: serial('id').primaryKey(),
+    name: text('name').notNull(),
+    email: text('email').unique().notNull(),
+    password: text('password').notNull(),
+    mailboxEmail: text('mailbox_email'),
+    profilePicture: text('profile_picture'),
+    status: varchar('status', { length: 20 }).default('active'),
+    createdByAdminId: integer('created_by_admin_id').references(() => admins.id),
+    resetPasswordToken: text('reset_password_token'),
+    resetPasswordExpiry: timestamp('reset_password_expiry'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+    lastLoginAt: timestamp('last_login_at'),
+});
+
+export const marketingTemplates = pgTable('marketing_templates', {
+    id: serial('id').primaryKey(),
+    name: varchar('name', { length: 120 }).notNull(),
+    subject: varchar('subject', { length: 255 }).notNull(),
+    htmlContent: text('html_content').notNull(),
+    createdByMarketingUserId: integer('created_by_marketing_user_id').references(() => marketingUsers.id),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const marketingCampaigns = pgTable('marketing_campaigns', {
+    id: serial('id').primaryKey(),
+    name: varchar('name', { length: 120 }).notNull(),
+    subject: varchar('subject', { length: 255 }).notNull(),
+    htmlContent: text('html_content').notNull(),
+    textContent: text('text_content'),
+    listId: integer('list_id').references(() => marketingLists.id).notNull(),
+    templateId: integer('template_id').references(() => marketingTemplates.id),
+    status: varchar('status', { length: 20 }).default('draft'),
+    fromEmail: varchar('from_email', { length: 255 }).notNull(),
+    fromName: varchar('from_name', { length: 120 }).notNull(),
+    createdByMarketingUserId: integer('created_by_marketing_user_id').references(() => marketingUsers.id),
+    scheduledAt: timestamp('scheduled_at'),
+    startedAt: timestamp('started_at'),
+    completedAt: timestamp('completed_at'),
+    totalRecipients: integer('total_recipients').default(0),
+    sentCount: integer('sent_count').default(0),
+    failedCount: integer('failed_count').default(0),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const marketingCampaignSends = pgTable('marketing_campaign_sends', {
+    id: serial('id').primaryKey(),
+    campaignId: integer('campaign_id').references(() => marketingCampaigns.id).notNull(),
+    subscriberId: integer('subscriber_id').references(() => marketingSubscribers.id),
+    email: varchar('email', { length: 255 }).notNull(),
+    status: varchar('status', { length: 20 }).default('pending'),
+    errorMessage: text('error_message'),
+    sentAt: timestamp('sent_at'),
+    createdAt: timestamp('created_at').defaultNow(),
 });

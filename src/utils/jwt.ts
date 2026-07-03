@@ -4,7 +4,7 @@ import { env } from '../config/env.js';
 export interface JWTPayload {
     id: number;
     email: string;
-    role: 'developer' | 'client' | 'admin';
+    role: 'developer' | 'client' | 'admin' | 'marketing';
 }
 
 export const generateToken = (payload: JWTPayload): string => {

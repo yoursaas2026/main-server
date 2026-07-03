@@ -1,0 +1,10 @@
+import { Hono } from 'hono';
+import { authMiddleware } from '../../middleware/auth.middleware.js';
+import { adminMarketingUsersController } from '../../controllers/admin/marketing-users.controller.js';
+const adminMarketingRoutes = new Hono();
+adminMarketingRoutes.use('*', authMiddleware);
+adminMarketingRoutes.get('/users', (c) => adminMarketingUsersController.list(c));
+adminMarketingRoutes.post('/users', (c) => adminMarketingUsersController.create(c));
+adminMarketingRoutes.put('/users/:id', (c) => adminMarketingUsersController.update(c));
+adminMarketingRoutes.delete('/users/:id', (c) => adminMarketingUsersController.delete(c));
+export default adminMarketingRoutes;
