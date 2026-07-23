@@ -17,6 +17,10 @@ import {
     type AuthResponseData,
 } from '../../types/auth.types.js';
 import { buildDeveloperOnboardingStatus } from '../../utils/developer-onboarding.js';
+import {
+    effectiveDeveloperPlan,
+    ensureDeveloperPlanNotExpired,
+} from '../../utils/developer-plan.js';
 
 // ─── Helper: pick only safe fields to send back to clients ────────────────────
 
@@ -30,7 +34,7 @@ function pickDeveloperAuthProfile(dev: typeof developers.$inferSelect): Develope
         coverPicture: dev.coverPicture,
         isEmailVerified: dev.isEmailVerified,
         kycStatus: dev.kycStatus,
-        plan: dev.plan,
+        plan: effectiveDeveloperPlan(dev.plan, dev.planEndDate),
         planBillingCycle: dev.planBillingCycle,
         planStartDate: dev.planStartDate,
         planEndDate: dev.planEndDate,
@@ -69,7 +73,7 @@ function pickDeveloperPublicProfile(dev: typeof developers.$inferSelect): Develo
         isEmailVerified: dev.isEmailVerified,
         isPhoneVerified: dev.isPhoneVerified,
         authProvider: dev.authProvider,
-        plan: dev.plan,
+        plan: effectiveDeveloperPlan(dev.plan, dev.planEndDate),
         planBillingCycle: dev.planBillingCycle,
         planStartDate: dev.planStartDate,
         planEndDate: dev.planEndDate,
@@ -203,9 +207,10 @@ export class DeveloperAuthController {
 
             const token = generateToken({ id: user.id, email: user.email, role: 'developer' });
 
+            const effectivePlan = await ensureDeveloperPlanNotExpired(user.id);
             const data: AuthResponseData<DeveloperAuthProfile> = {
                 token,
-                user: pickDeveloperAuthProfile(user),
+                user: pickDeveloperAuthProfile({ ...user, plan: effectivePlan }),
             };
 
             return c.json({ success: true, message: 'Login successful', data });
@@ -283,7 +288,8 @@ export class DeveloperAuthController {
 
         const token = generateToken({ id: user.id, email: user.email, role: 'developer' });
 
-        return { token, user: pickDeveloperAuthProfile(user) };
+        const effectivePlan = await ensureDeveloperPlanNotExpired(user.id);
+        return { token, user: pickDeveloperAuthProfile({ ...user, plan: effectivePlan }) };
     }
 
     // ── Google OAuth ──────────────────────────────────────────────────────────
@@ -490,11 +496,14 @@ export class DeveloperAuthController {
                 return c.json({ success: false, error: 'User not found' }, 404);
             }
 
+            // Sticky DB plan can still say Pro/Ultimate after planEndDate — write Base + return effective.
+            const effectivePlan = await ensureDeveloperPlanNotExpired(developer.id);
+
             return c.json({
                 success: true,
                 message: 'User fetched successfully',
                 data: {
-                    user: pickDeveloperPublicProfile(developer),
+                    user: pickDeveloperPublicProfile({ ...developer, plan: effectivePlan }),
                     onboarding: buildDeveloperOnboardingStatus(developer),
                 },
             });

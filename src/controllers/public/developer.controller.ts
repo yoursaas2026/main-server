@@ -11,6 +11,7 @@ import {
     toPublicExperiences,
     toPublicPortfolioProjects,
 } from '../../utils/developer-profile-parse.js';
+import { effectiveDeveloperPlan } from '../../utils/developer-plan.js';
 
 export class PublicDeveloperController {
     async getById(c: Context) {
@@ -43,6 +44,7 @@ export class PublicDeveloperController {
                     openToOpenSource: developers.openToOpenSource,
                     availableForHire: developers.availableForHire,
                     plan: developers.plan,
+                    planEndDate: developers.planEndDate,
                     kycStatus: developers.kycStatus,
                     status: developers.status,
                 })
@@ -76,7 +78,7 @@ export class PublicDeveloperController {
                         bio: dev.bio ?? '',
                         profilePicture: absoluteMediaUrl(dev.profilePicture),
                         coverPicture: absoluteMediaUrl(dev.coverPicture),
-                        plan: dev.plan ?? 'base',
+                        plan: effectiveDeveloperPlan(dev.plan, dev.planEndDate),
                         kycStatus: dev.kycStatus ?? 'pending',
                         experienceYears: dev.experience,
                         hourlyRate: dev.hourlyRate,

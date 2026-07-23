@@ -2,6 +2,7 @@ import type { Context } from 'hono';
 import { db } from '../../db/index.js';
 import { developers } from '../../db/schema.js';
 import { eq, desc } from 'drizzle-orm';
+import { effectiveDeveloperPlan } from '../../utils/developer-plan.js';
 
 export class AdminDeveloperController {
     // ── Get All Developers ───────────────────────────────────────────────────
@@ -22,12 +23,21 @@ export class AdminDeveloperController {
                     kycStatus: developers.kycStatus,
                     kycSubmittedAt: developers.kycSubmittedAt,
                     createdAt: developers.createdAt,
-                    plan: developers.plan
+                    plan: developers.plan,
+                    planEndDate: developers.planEndDate,
                 })
                 .from(developers)
                 .orderBy(desc(developers.createdAt));
 
-            return c.json({ success: true, data: { developers: allDevelopers } });
+            return c.json({
+                success: true,
+                data: {
+                    developers: allDevelopers.map(({ planEndDate, ...d }) => ({
+                        ...d,
+                        plan: effectiveDeveloperPlan(d.plan, planEndDate),
+                    })),
+                },
+            });
         } catch (error) {
             console.error('[AdminDeveloper] getAllDevelopers error:', error);
             return c.json({ success: false, error: 'Failed to fetch developers' }, 500);
@@ -59,10 +69,18 @@ export class AdminDeveloperController {
                 return c.json({ success: false, error: 'Developer not found' }, 404);
             }
 
-            // Exclude password from the returned object
+            // Exclude password from the returned object; surface effective plan after expiry.
             const { password, ...safeDeveloper } = developer;
 
-            return c.json({ success: true, data: { developer: safeDeveloper } });
+            return c.json({
+                success: true,
+                data: {
+                    developer: {
+                        ...safeDeveloper,
+                        plan: effectiveDeveloperPlan(safeDeveloper.plan, safeDeveloper.planEndDate),
+                    },
+                },
+            });
         } catch (error) {
             console.error('[AdminDeveloper] getDeveloperDetails error:', error);
             return c.json({ success: false, error: 'Failed to fetch developer details' }, 500);

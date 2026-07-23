@@ -1,22 +1,19 @@
 import { and, count, eq, ne } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { developerProducts, developers } from '../db/schema.js';
+import { ensureDeveloperPlanNotExpired, normalizeDeveloperPlan } from './developer-plan.js';
 
 /** `null` = unlimited (Ultimate). */
 export function maxLiveListingsForPlan(plan: string | null | undefined): number | null {
-    const p = (plan || 'base').toLowerCase();
+    const p = normalizeDeveloperPlan(plan);
     if (p === 'ultimate') return null;
     if (p === 'pro') return 10;
     return 1;
 }
 
+/** Effective plan (expired paid terms count as Base) with lazy DB write-down. */
 export async function getDeveloperPlan(developerId: number): Promise<string> {
-    const [row] = await db
-        .select({ plan: developers.plan })
-        .from(developers)
-        .where(eq(developers.id, developerId))
-        .limit(1);
-    return (row?.plan || 'base').toLowerCase();
+    return ensureDeveloperPlanNotExpired(developerId);
 }
 
 /** Count of products with `listing_status = live` for this developer, optionally excluding one id (e.g. current row while updating). */

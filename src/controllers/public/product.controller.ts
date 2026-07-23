@@ -9,6 +9,7 @@ import {
     contractCheckoutBreakdown,
 } from '../../services/contract.service.js';
 import { listLiveMarketplaceProducts } from '../../services/client-recommendations.js';
+import { effectiveDeveloperPlan } from '../../utils/developer-plan.js';
 
 function parseJson<T>(value: string | null, fallback: T): T {
     if (!value) return fallback;
@@ -308,6 +309,7 @@ export class PublicProductController {
                         location: developers.location,
                         createdAt: developers.createdAt,
                         plan: developers.plan,
+                        planEndDate: developers.planEndDate,
                         kycStatus: developers.kycStatus,
                     },
                     categoryName: productCategories.name,
@@ -426,7 +428,13 @@ export class PublicProductController {
                     developerRepliedAt: r.developerRepliedAt,
                 })),
                 listingStatus: normalizeListingStatus(p.listingStatus),
-                developer: row.developer,
+                developer: (() => {
+                    const { planEndDate, plan, ...rest } = row.developer;
+                    return {
+                        ...rest,
+                        plan: effectiveDeveloperPlan(plan, planEndDate),
+                    };
+                })(),
             };
 
             return c.json({ success: true, data: { product } });

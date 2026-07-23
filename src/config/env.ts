@@ -101,4 +101,13 @@ export const env = {
         60_000,
         parseInt(process.env.CONTRACT_AUTO_COMPLETE_INTERVAL_MS || '300000', 10)
     ),
+    /** Background job interval for downgrading expired Pro/Ultimate plans to Base (ms). */
+    SUBSCRIPTION_EXPIRY_INTERVAL_MS: Math.max(
+        60_000,
+        parseInt(process.env.SUBSCRIPTION_EXPIRY_INTERVAL_MS || '300000', 10)
+    ),
+
+    /** OpenAI — Astra listing autofill (Ultimate plan) */
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY || '',
+    OPENAI_MODEL: process.env.OPENAI_MODEL || 'gpt-4o-mini',
 };

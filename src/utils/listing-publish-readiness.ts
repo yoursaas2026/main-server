@@ -24,7 +24,7 @@ function isEmail(s: string): boolean {
 }
 
 /**
- * All items that must be satisfied before `listingStatus` may be set to `live`.
+ * Core items required before `listingStatus` may be set to `live`.
  * Keep in sync with `developer.yoursaas/lib/listingPublishReadiness.ts`.
  */
 export function getMissingForLiveListing(input: DeveloperProductUpsertInput): string[] {
@@ -54,16 +54,10 @@ export function getMissingForLiveListing(input: DeveloperProductUpsertInput): st
     const solution = input.solution?.trim() ?? '';
     if (solution.length < 20) missing.push('Solution (at least 20 characters)');
 
-    const ft = input.featuresTagline?.trim() ?? '';
-    if (ft.length < 8) missing.push('Features section tagline');
-
-    const fab = input.featuresAboutBody?.trim() ?? '';
-    if (fab.length < 40) missing.push('About this product body (at least 40 characters)');
-
     const goodBenefits = (input.benefits || []).filter(
         (b) => b.title?.trim() && b.desc?.trim() && b.title.trim().length >= 2 && b.desc.trim().length >= 8
     );
-    if (goodBenefits.length < 3) missing.push('At least 3 key benefits with title and description');
+    if (goodBenefits.length < 1) missing.push('At least 1 key benefit with title and description');
 
     const goodFeatures = (input.features || []).filter(
         (f) =>
@@ -71,78 +65,39 @@ export function getMissingForLiveListing(input: DeveloperProductUpsertInput): st
             f.short?.trim().length >= 8 &&
             f.detail?.trim().length >= 20
     );
-    if (goodFeatures.length < 2) missing.push('At least 2 features with title, short line, and full detail');
+    if (goodFeatures.length < 1) missing.push('At least 1 feature with title, short line, and full detail');
 
     const cases = (input.useCases || []).map((u) => u.trim()).filter(Boolean);
-    if (cases.length < 2) missing.push('At least 2 use cases');
+    if (cases.length < 1) missing.push('At least 1 use case');
 
     const tags = (input.audienceTags || []).map((t) => t.trim()).filter(Boolean);
-    if (tags.length < 2) missing.push('At least 2 audience tags');
+    if (tags.length < 1) missing.push('At least 1 audience tag');
 
     if (!input.deploymentTime?.trim()) missing.push('Go-live / deployment time (Pricing & packages)');
     if (!input.bestFor?.trim()) missing.push('“Best for” segment line (Pricing & packages)');
 
     const tiers = input.customizationTiers || [];
     const byId = new Map(tiers.map((t) => [t.id, t]));
-    for (const id of ['base', 'plus', 'pro'] as const) {
-        const t = byId.get(id);
-        if (!t) {
-            missing.push(`Customization tier: ${id} (Base / Plus / Pro)`);
-            continue;
+    const base = byId.get('base');
+    if (!base) {
+        missing.push('Customization tier: base (Base / Plus / Pro)');
+    } else {
+        if (!base.name?.trim() || !base.tagline?.trim() || !base.delivery?.trim()) {
+            missing.push('Tier “base”: name, tagline, and delivery timeline');
         }
-        if (!t.name?.trim() || !t.tagline?.trim() || !t.delivery?.trim()) {
-            missing.push(`Tier “${id}”: name, tagline, and delivery timeline`);
+        if (!base.description?.trim() || base.description.trim().length < 10) {
+            missing.push('Tier “base”: description (at least 10 characters)');
         }
-        if (!t.description?.trim() || t.description.trim().length < 10) {
-            missing.push(`Tier “${id}”: description (at least 10 characters)`);
-        }
-        if (id === 'pro') {
-            /* custom quote allowed */
-        } else if (t.fixedPriceInr == null || t.fixedPriceInr <= 0) {
-            missing.push(`Tier “${id}”: fixed price in INR (or use Pro for custom quote)`);
+        if (base.fixedPriceInr == null || base.fixedPriceInr <= 0) {
+            missing.push('Tier “base”: fixed price in INR (or use Pro for custom quote)');
         }
     }
-
-    const tech = input.technical;
-    const techLabels: [keyof typeof tech, string][] = [
-        ['stack', 'Tech stack'],
-        ['deployment', 'Deployment'],
-        ['integrations', 'Integrations'],
-        ['platforms', 'Platforms'],
-        ['api', 'API'],
-        ['security', 'Security'],
-        ['compliance', 'Compliance'],
-    ];
-    for (const [key, label] of techLabels) {
-        if (!tech[key]?.trim()) missing.push(`Technical: ${label}`);
-    }
-
-    const demo = input.demoUrl?.trim() ?? '';
-    if (!isHttpUrl(demo)) missing.push('Live demo URL (valid http/https)');
 
     if (input.freeTrial && (input.trialDays == null || input.trialDays < 1)) {
         missing.push('Trial length in days (when free trial is enabled)');
     }
 
-    if (!input.demoUser?.trim()) missing.push('Demo username');
-    if (!input.demoPassword?.trim()) missing.push('Demo password');
-
-    const video = input.demoVideoId?.trim() ?? '';
-    if (video.length < 6) missing.push('Demo video (YouTube ID or embed URL)');
-
-    if (!isHttpUrl(input.supportDocs?.trim() ?? '')) missing.push('Support documentation URL');
     if (!isEmail(input.supportEmail?.trim() ?? '')) missing.push('Support email');
-    if (!input.supportChat?.trim()) missing.push('Live chat availability text');
-    if (!input.supportResponse?.trim()) missing.push('Typical support response time');
-
-    if (!isHttpUrl(input.legalPrivacy?.trim() ?? '')) missing.push('Legal: Privacy policy URL');
-    if (!isHttpUrl(input.legalTerms?.trim() ?? '')) missing.push('Legal: Terms of service URL');
-    if (!isHttpUrl(input.legalRefund?.trim() ?? '')) missing.push('Legal: Refund policy URL');
-
-    if (!input.meta.version?.trim()) missing.push('Version label (Buyer page details)');
-    if (!input.meta.setupTime?.trim()) missing.push('Typical setup time');
-    if (!input.meta.difficulty?.trim()) missing.push('Difficulty');
-    if (!input.meta.requirements?.trim()) missing.push('Minimum requirements');
 
     const icon = input.iconUrl?.trim() ?? '';
     if (!icon || !isProductImageRef(icon)) missing.push('App icon (upload or paste a hosted image URL)');

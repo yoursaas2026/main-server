@@ -15,6 +15,7 @@ import developerPaymentRoutes from './routes/developer/payment.routes.js';
 import developerPayoutRoutes from './routes/developer/payout.routes.js';
 import developerChatRoutes from './routes/developer/chat.routes.js';
 import developerProductRoutes from './routes/developer/product.routes.js';
+import developerAstraRoutes from './routes/developer/astra.routes.js';
 import { developerProfileRoutes } from './routes/developer/profile.routes.js';
 import publicProductRoutes from './routes/public/product.routes.js';
 import publicNewsletterRoutes from './routes/public/newsletter.routes.js';
@@ -33,6 +34,7 @@ import {
     marketingCampaignsRoutes,
 } from './routes/marketing/index.js';
 import { startContractJobs } from './jobs/contract-jobs.js';
+import { startSubscriptionJobs } from './jobs/subscription-jobs.js';
 
 const app = new Hono();
 
@@ -97,6 +99,7 @@ app.route('/api/developer/kyc', developerKycRoutes);
 app.route('/api/developer/payment', developerPaymentRoutes);
 app.route('/api/developer/payout', developerPayoutRoutes);
 app.route('/api/developer/products', developerProductRoutes);
+app.route('/api/developer/astra', developerAstraRoutes);
 app.route('/api/developer/profile', developerProfileRoutes);
 app.route('/api/developer/chat', developerChatRoutes);
 app.route('/api/public/products', publicProductRoutes);
@@ -154,5 +157,6 @@ serve({
 });
 
 startContractJobs();
+startSubscriptionJobs();
 
 export default app;

@@ -2,6 +2,7 @@ import type { Context } from 'hono';
 import { and, asc, desc, eq, ilike, or, sql } from 'drizzle-orm';
 import { db } from '../../db/index.js';
 import { developerProducts, developers, productCategories } from '../../db/schema.js';
+import { effectiveDeveloperPlan } from '../../utils/developer-plan.js';
 import { z } from 'zod';
 
 function assertAdmin(c: Context) {
@@ -236,6 +237,7 @@ export class AdminProductController {
                     status: developers.status,
                     kycStatus: developers.kycStatus,
                     plan: developers.plan,
+                    planEndDate: developers.planEndDate,
                     createdAt: developers.createdAt,
                 })
                 .from(developers)
@@ -260,7 +262,12 @@ export class AdminProductController {
                         ...product,
                         demoPassword: product.demoPassword ? '••••••••' : '',
                     },
-                    developer: dev ?? null,
+                    developer: dev
+                        ? {
+                              ...dev,
+                              plan: effectiveDeveloperPlan(dev.plan, dev.planEndDate),
+                          }
+                        : null,
                 },
             });
         } catch (error) {
