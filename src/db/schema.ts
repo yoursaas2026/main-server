@@ -157,6 +157,17 @@ export const clients = pgTable('clients', {
     problemStatement: text('problem_statement'),
     /** JSON string array of preferred tech stacks */
     preferredStacks: text('preferred_stacks'),
+    /** JSON string array — pain points from discovery questionnaire */
+    painPoints: text('pain_points'),
+    /** JSON string array — preferred integrations (Gmail, Slack, …) */
+    preferredIntegrations: text('preferred_integrations'),
+    /** JSON string array — tools they already use (optional) */
+    currentTools: text('current_tools'),
+    /**
+     * Discovery interest profile:
+     * { version, base: Record<tag, number>, learned: Record<tag, number>, updatedAt }
+     */
+    interestProfile: text('interest_profile'),
     /** JSON string array of saved developer_products.id */
     savedProductIds: text('saved_product_ids'),
     onboardingCompletedAt: timestamp('onboarding_completed_at'),
@@ -296,6 +307,12 @@ export const clientListingEvents = pgTable('client_listing_events', {
     clientId: integer('client_id').references(() => clients.id).notNull(),
     productId: integer('product_id').references(() => developerProducts.id).notNull(),
     eventType: varchar('event_type', { length: 24 }).notNull(),
+    /** home_recs | search | pdp | pdp_similar | dashboard | compare | … */
+    surface: varchar('surface', { length: 40 }),
+    queryId: varchar('query_id', { length: 64 }),
+    sessionId: varchar('session_id', { length: 64 }),
+    /** JSON blob — extra context (compared ids, tags, etc.) */
+    meta: text('meta'),
     createdAt: timestamp('created_at').defaultNow(),
 });
 

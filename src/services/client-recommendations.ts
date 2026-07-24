@@ -8,6 +8,8 @@ import {
     productReviews,
 } from '../db/schema.js';
 import { parseClientJsonIds } from '../utils/client-onboarding.js';
+import { parseInterestProfile } from './discovery/interest-profile.js';
+import { scoreListingCandidate, type BuyerScoreContext } from './discovery/scoring-engine.js';
 
 type TierRow = { id?: string; fixedPriceInr?: number | null };
 
@@ -35,25 +37,6 @@ function minTierPriceInr(tiersJson: string | null): number | null {
     return Math.min(...prices);
 }
 
-const BUDGET_MAX_INR: Record<string, number> = {
-    lt_50k: 50_000,
-    '50k_2l': 200_000,
-    '2l_10l': 1_000_000,
-    gt_10l: Number.POSITIVE_INFINITY,
-};
-
-function budgetFits(band: string | null, minPrice: number | null): boolean {
-    if (!band || minPrice === null) return true;
-    const max = BUDGET_MAX_INR[band];
-    if (max === undefined) return true;
-    return minPrice <= max;
-}
-
-function overlapScore(a: string[], b: string[]): number {
-    const setB = new Set(b.map((s) => s.toLowerCase()));
-    return a.filter((x) => setB.has(x.toLowerCase())).length;
-}
-
 export type MarketplaceListItem = {
     id: number;
     slug: string;
@@ -66,102 +49,29 @@ export type MarketplaceListItem = {
     minPriceInr: number | null;
     audienceTags: string[];
     matchScore?: number;
+    matchPercent?: number;
     matchReasons?: string[];
 };
 
-function scoreProduct(
-    row: {
-        product: typeof developerProducts.$inferSelect;
-        categoryName: string | null;
-        avgRating: number | null;
-        reviewCount: number;
-    },
+function buyerContextFromClient(
     client: typeof clients.$inferSelect,
     viewedProductIds: Set<number>,
     savedProductIds: Set<number>
-): { score: number; reasons: string[] } {
-    let score = 0;
-    const reasons: string[] = [];
-
-    const interested = parseClientJsonIds(client.interestedCategoryIds);
-    if (row.product.productCategoryId && interested.includes(row.product.productCategoryId)) {
-        score += 30;
-        reasons.push('Matches your categories');
-    }
-
-    const audienceTags = parseJson<string[]>(row.product.audienceTags, []);
-    const industry = (client.industry || '').trim();
-    const companySize = (client.companySize || '').trim();
-    const tagHits = overlapScore(
-        audienceTags,
-        [industry, companySize].filter(Boolean)
-    );
-    if (tagHits > 0) {
-        score += Math.min(20, tagHits * 10);
-        reasons.push('Fits your industry or company size');
-    }
-
-    const goals = parseJson<string[]>(client.primaryGoals, []);
-    const haystack = [
-        row.product.bestFor || '',
-        row.product.tagline || '',
-        row.product.shortDescription || '',
-        ...parseJson<string[]>(row.product.useCases, []),
-    ]
-        .join(' ')
-        .toLowerCase();
-    const goalHits = goals.filter((g) => haystack.includes(g.replace(/_/g, ' ')) || haystack.includes(g)).length;
-    if (goalHits > 0) {
-        score += 15;
-        reasons.push('Aligned with your goals');
-    }
-
-    const problem = (client.problemStatement || '').trim().toLowerCase();
-    if (problem.length >= 8) {
-        const words = problem.split(/\s+/).filter((w) => w.length > 4);
-        const wordHits = words.filter((w) => haystack.includes(w)).length;
-        if (wordHits >= 2) {
-            score += 12;
-            reasons.push('Similar to your stated problem');
-        }
-    }
-
-    const stacks = parseJson<string[]>(client.preferredStacks, []);
-    const techHay = (row.product.technicalStack || '').toLowerCase();
-    const stackHits = stacks.filter((s) => techHay.includes(s.toLowerCase())).length;
-    if (stackHits > 0) {
-        score += 8;
-        reasons.push('Uses your preferred stack');
-    }
-
-    const minPrice = minTierPriceInr(row.product.customizationTiers);
-    if (budgetFits(client.budgetBand, minPrice)) {
-        score += 10;
-        reasons.push('Within your budget band');
-    } else {
-        score -= 15;
-    }
-
-    if (row.product.trustVerifiedByPlatform) {
-        score += 8;
-        reasons.push('Platform verified');
-    }
-
-    if (row.avgRating && row.avgRating >= 4 && row.reviewCount > 0) {
-        score += 6;
-        reasons.push('Highly rated');
-    }
-
-    if (savedProductIds.has(row.product.id)) {
-        score += 12;
-        reasons.push('Saved by you');
-    }
-
-    if (viewedProductIds.has(row.product.id)) {
-        score += 5;
-    }
-
-    return { score, reasons: [...new Set(reasons)] };
+): BuyerScoreContext {
+    return {
+        industry: client.industry,
+        companySize: client.companySize,
+        budgetBand: client.budgetBand,
+        primaryGoals: parseJson<string[]>(client.primaryGoals, []),
+        interestedCategoryIds: parseClientJsonIds(client.interestedCategoryIds),
+        painPoints: parseJson<string[]>(client.painPoints, []),
+        preferredIntegrations: parseJson<string[]>(client.preferredIntegrations, []),
+        preferredStacks: parseJson<string[]>(client.preferredStacks, []),
+        problemStatement: client.problemStatement,
+        interestProfile: parseInterestProfile(client.interestProfile),
+        viewedProductIds,
+        savedProductIds,
+    };
 }
 
 export async function listLiveMarketplaceProducts(options: {
@@ -179,6 +89,7 @@ export async function listLiveMarketplaceProducts(options: {
     let client: typeof clients.$inferSelect | null = null;
     let viewedProductIds = new Set<number>();
     let savedProductIds = new Set<number>();
+    let buyer: BuyerScoreContext | null = null;
 
     if (options.clientId) {
         const [c] = await db
@@ -201,6 +112,10 @@ export async function listLiveMarketplaceProducts(options: {
             .orderBy(desc(clientListingEvents.createdAt))
             .limit(200);
         viewedProductIds = new Set(views.map((v) => v.productId));
+
+        if (client) {
+            buyer = buyerContextFromClient(client, viewedProductIds, savedProductIds);
+        }
     }
 
     const rows = await db
@@ -236,22 +151,40 @@ export async function listLiveMarketplaceProducts(options: {
     let items: MarketplaceListItem[] = rows.map((row) => {
         const stats = reviewStats.get(row.product.id);
         const minPriceInr = minTierPriceInr(row.product.customizationTiers);
+        const shots = parseJson<string[]>(row.product.screenshotUrls, []);
+        const tiers = parseJson<TierRow[]>(row.product.customizationTiers, []);
+
         let matchScore: number | undefined;
+        let matchPercent: number | undefined;
         let matchReasons: string[] | undefined;
 
-        if (client) {
-            const scored = scoreProduct(
+        if (buyer) {
+            const scored = scoreListingCandidate(
                 {
-                    product: row.product,
+                    id: row.product.id,
+                    categoryId: row.product.productCategoryId ?? null,
                     categoryName: row.categoryName,
+                    audienceTags: parseJson<string[]>(row.product.audienceTags, []),
+                    useCases: parseJson<string[]>(row.product.useCases, []),
+                    bestFor: row.product.bestFor || '',
+                    tagline: row.product.tagline || '',
+                    shortDescription: row.product.shortDescription || '',
+                    technicalStack: row.product.technicalStack || '',
+                    technicalIntegrations: row.product.technicalIntegrations || '',
+                    minPriceInr,
+                    trustVerifiedByPlatform: row.product.trustVerifiedByPlatform ?? false,
                     avgRating: stats?.avg ?? null,
                     reviewCount: stats?.count ?? 0,
+                    updatedAt: row.product.updatedAt,
+                    hasIcon: Boolean(row.product.iconUrl?.trim()),
+                    screenshotCount: shots.length,
+                    hasSupportEmail: Boolean(row.product.supportEmail?.trim()),
+                    hasTiers: tiers.some((t) => typeof t.fixedPriceInr === 'number' && t.fixedPriceInr > 0),
                 },
-                client,
-                viewedProductIds,
-                savedProductIds
+                buyer
             );
-            matchScore = scored.score;
+            matchScore = scored.total;
+            matchPercent = scored.matchPercent;
             matchReasons = scored.reasons;
         }
 
@@ -267,6 +200,7 @@ export async function listLiveMarketplaceProducts(options: {
             minPriceInr,
             audienceTags: parseJson<string[]>(row.product.audienceTags, []),
             matchScore,
+            matchPercent,
             matchReasons,
         };
     });
