@@ -7,6 +7,8 @@ import { getMissingForLiveListing } from '../../utils/listing-publish-readiness.
 import { countDeveloperLiveListings, getDeveloperPlan, liveListingLimitErrorMessage, maxLiveListingsForPlan, } from '../../utils/developer-live-listing-limits.js';
 import { cleanupAllProductMediaForRow, cleanupAllProductMediaFromInput, cleanupReplacedProductMedia, } from '../../utils/product-media-cleanup.js';
 import { assertDeveloperMarketplaceReady } from '../../utils/developer-onboarding.js';
+import { queueListingVectorSync } from '../../services/discovery/listing-indexer.js';
+import { deleteListingVector } from '../../services/discovery/vector-store.js';
 function assertDeveloper(c) {
     const jwtUser = c.get('user');
     if (!jwtUser || jwtUser.role !== 'developer')
@@ -335,6 +337,7 @@ export class DeveloperProductController {
                 .insert(developerProducts)
                 .values(toDbRecord(input, jwtUser.id))
                 .returning();
+            queueListingVectorSync(created.id);
             return c.json({
                 success: true,
                 message: 'Product created',
@@ -550,6 +553,7 @@ export class DeveloperProductController {
                 .where(and(eq(developerProducts.id, parsedId.data.id), eq(developerProducts.developerId, jwtUser.id)))
                 .returning();
             cleanupReplacedProductMedia({ iconUrl: existing.iconUrl, screenshotUrls: existing.screenshotUrls }, { iconUrl: input.iconUrl, screenshotUrls: input.screenshotUrls });
+            queueListingVectorSync(updated.id);
             return c.json({
                 success: true,
                 message: 'Product updated',
@@ -581,6 +585,7 @@ export class DeveloperProductController {
                 .delete(developerProducts)
                 .where(and(eq(developerProducts.id, parsedId.data.id), eq(developerProducts.developerId, jwtUser.id)));
             cleanupAllProductMediaForRow(existing);
+            void deleteListingVector(parsedId.data.id);
             return c.json({ success: true, message: 'Product deleted' });
         }
         catch (error) {

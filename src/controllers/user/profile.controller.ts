@@ -8,9 +8,9 @@ import {
     parseClientJsonIds,
     serializeJsonArray,
 } from '../../utils/client-onboarding.js';
-import { getRecommendationsForClient } from '../../services/client-recommendations.js';
+import { getHomeRecommendationRails } from '../../services/client-recommendations.js';
 import { parseInterestProfile } from '../../services/discovery/interest-profile.js';
-import { refreshClientInterestProfile } from '../../services/discovery/rebuild-profile.js';
+import { refreshClientInterestProfile, ensureClientInterestProfile } from '../../services/discovery/rebuild-profile.js';
 import { isDiscoveryEventType, trackDiscoveryEvent } from '../../services/discovery/events.js';
 
 const UpdateClientProfileSchema = z.object({
@@ -260,15 +260,32 @@ export class UserProfileController {
         const surface = (c.req.query('surface') || 'dashboard').slice(0, 40);
 
         try {
-            const products = await getRecommendationsForClient(user.id, limit);
+            await ensureClientInterestProfile(user.id);
+            const rails = await getHomeRecommendationRails(user.id, limit);
+            const withPercent = <T extends { matchPercent?: number; matchScore?: number }>(p: T) => ({
+                ...p,
+                matchPercent:
+                    p.matchPercent ??
+                    (p.matchScore && p.matchScore > 0 ? Math.min(99, Math.round(p.matchScore)) : 0),
+            });
+
             return c.json({
                 success: true,
                 data: {
                     surface,
-                    products: products.map((p) => ({
-                        ...p,
-                        matchPercent: p.matchPercent ?? (p.matchScore && p.matchScore > 0 ? Math.min(99, p.matchScore) : 0),
-                    })),
+                    /** @deprecated prefer `rails.recommended` — kept for older clients */
+                    products: rails.recommended.map(withPercent),
+                    rails: {
+                        recommended: rails.recommended.map(withPercent),
+                        explored: rails.explored
+                            ? {
+                                  topicLabel: rails.explored.topicLabel,
+                                  topTags: rails.explored.topTags,
+                                  products: rails.explored.products.map(withPercent),
+                              }
+                            : null,
+                        saved: rails.saved.map(withPercent),
+                    },
                 },
             });
         } catch (error) {

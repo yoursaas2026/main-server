@@ -15,6 +15,7 @@ import developerPaymentRoutes from './routes/developer/payment.routes.js';
 import developerPayoutRoutes from './routes/developer/payout.routes.js';
 import developerChatRoutes from './routes/developer/chat.routes.js';
 import developerProductRoutes from './routes/developer/product.routes.js';
+import developerAstraRoutes from './routes/developer/astra.routes.js';
 import { developerProfileRoutes } from './routes/developer/profile.routes.js';
 import publicProductRoutes from './routes/public/product.routes.js';
 import publicNewsletterRoutes from './routes/public/newsletter.routes.js';
@@ -28,6 +29,7 @@ import adminContractRoutes from './routes/admin/contract.routes.js';
 import adminMarketingRoutes from './routes/admin/marketing.routes.js';
 import { marketingAuthRoutes, marketingListsRoutes, marketingTemplatesRoutes, marketingCampaignsRoutes, } from './routes/marketing/index.js';
 import { startContractJobs } from './jobs/contract-jobs.js';
+import { startSubscriptionJobs } from './jobs/subscription-jobs.js';
 const app = new Hono();
 // Middleware
 app.use('*', logger());
@@ -60,6 +62,8 @@ app.get('/', async (c) => {
                 userAuth: '/api/user/auth',
                 userChat: '/api/user/chat',
                 developerChat: '/api/developer/chat',
+                adminMarketing: '/api/admin/marketing/users',
+                marketingPortal: '/api/marketing/auth',
                 health: '/',
             },
         });
@@ -82,6 +86,7 @@ app.route('/api/developer/kyc', developerKycRoutes);
 app.route('/api/developer/payment', developerPaymentRoutes);
 app.route('/api/developer/payout', developerPayoutRoutes);
 app.route('/api/developer/products', developerProductRoutes);
+app.route('/api/developer/astra', developerAstraRoutes);
 app.route('/api/developer/profile', developerProfileRoutes);
 app.route('/api/developer/chat', developerChatRoutes);
 app.route('/api/public/products', publicProductRoutes);
@@ -134,4 +139,5 @@ serve({
     port,
 });
 startContractJobs();
+startSubscriptionJobs();
 export default app;

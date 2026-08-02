@@ -8,7 +8,7 @@ import {
     CLIENT_NON_REFUNDABLE_FEE_BPS,
     contractCheckoutBreakdown,
 } from '../../services/contract.service.js';
-import { listLiveMarketplaceProducts } from '../../services/client-recommendations.js';
+import { listLiveMarketplaceProducts, getRelatedMarketplaceProducts } from '../../services/client-recommendations.js';
 import { effectiveDeveloperPlan } from '../../utils/developer-plan.js';
 
 function parseJson<T>(value: string | null, fallback: T): T {
@@ -53,7 +53,7 @@ export class PublicProductController {
         const clientId = this.getCurrentClientId(c);
 
         try {
-            const { products, total } = await listLiveMarketplaceProducts({
+            const { products, total, queryId, retrievalMode } = await listLiveMarketplaceProducts({
                 limit,
                 offset,
                 search,
@@ -72,11 +72,46 @@ export class PublicProductController {
                 data: {
                     products: mapped,
                     pagination: { limit, offset, total, count: mapped.length },
+                    queryId: queryId ?? null,
+                    retrievalMode: retrievalMode ?? 'fallback',
                 },
             });
         } catch (error) {
             console.error('[PublicProduct] listLive error:', error);
             return c.json({ success: false, error: 'Failed to fetch products' }, 500);
+        }
+    }
+
+    /** Related / similar live listings for a PDP. */
+    async getRelatedBySlug(c: Context) {
+        const slug = (c.req.param('slug') || '').trim().toLowerCase();
+        if (!slug) return c.json({ success: false, error: 'Invalid slug' }, 400);
+        const limit = Math.min(Math.max(parseInt(c.req.query('limit') || '8', 10), 1), 24);
+        const clientId = this.getCurrentClientId(c);
+
+        try {
+            const product = await this.resolveLiveProduct(slug);
+            if (!product) return c.json({ success: false, error: 'Product not found' }, 404);
+
+            const { products, queryId, retrievalMode } = await getRelatedMarketplaceProducts(product.id, {
+                limit,
+                clientId,
+            });
+
+            return c.json({
+                success: true,
+                data: {
+                    products: products.map((p) => ({
+                        ...p,
+                        coverImageUrl: absoluteMediaUrl(p.coverImageUrl) ?? null,
+                    })),
+                    queryId: queryId ?? null,
+                    retrievalMode: retrievalMode ?? 'fallback',
+                },
+            });
+        } catch (error) {
+            console.error('[PublicProduct] getRelatedBySlug error:', error);
+            return c.json({ success: false, error: 'Failed to fetch related products' }, 500);
         }
     }
 

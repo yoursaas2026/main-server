@@ -4,7 +4,8 @@ import { clients, developerProducts, developers, productCategories, productRevie
 import { absoluteMediaUrl } from '../../services/stream-chat.service.js';
 import { env } from '../../config/env.js';
 import { CLIENT_NON_REFUNDABLE_FEE_BPS, contractCheckoutBreakdown, } from '../../services/contract.service.js';
-import { listLiveMarketplaceProducts } from '../../services/client-recommendations.js';
+import { listLiveMarketplaceProducts, getRelatedMarketplaceProducts } from '../../services/client-recommendations.js';
+import { effectiveDeveloperPlan } from '../../utils/developer-plan.js';
 function parseJson(value, fallback) {
     if (!value)
         return fallback;
@@ -44,7 +45,7 @@ export class PublicProductController {
             : 'recommended';
         const clientId = this.getCurrentClientId(c);
         try {
-            const { products, total } = await listLiveMarketplaceProducts({
+            const { products, total, queryId, retrievalMode } = await listLiveMarketplaceProducts({
                 limit,
                 offset,
                 search,
@@ -61,12 +62,46 @@ export class PublicProductController {
                 data: {
                     products: mapped,
                     pagination: { limit, offset, total, count: mapped.length },
+                    queryId: queryId ?? null,
+                    retrievalMode: retrievalMode ?? 'fallback',
                 },
             });
         }
         catch (error) {
             console.error('[PublicProduct] listLive error:', error);
             return c.json({ success: false, error: 'Failed to fetch products' }, 500);
+        }
+    }
+    /** Related / similar live listings for a PDP. */
+    async getRelatedBySlug(c) {
+        const slug = (c.req.param('slug') || '').trim().toLowerCase();
+        if (!slug)
+            return c.json({ success: false, error: 'Invalid slug' }, 400);
+        const limit = Math.min(Math.max(parseInt(c.req.query('limit') || '8', 10), 1), 24);
+        const clientId = this.getCurrentClientId(c);
+        try {
+            const product = await this.resolveLiveProduct(slug);
+            if (!product)
+                return c.json({ success: false, error: 'Product not found' }, 404);
+            const { products, queryId, retrievalMode } = await getRelatedMarketplaceProducts(product.id, {
+                limit,
+                clientId,
+            });
+            return c.json({
+                success: true,
+                data: {
+                    products: products.map((p) => ({
+                        ...p,
+                        coverImageUrl: absoluteMediaUrl(p.coverImageUrl) ?? null,
+                    })),
+                    queryId: queryId ?? null,
+                    retrievalMode: retrievalMode ?? 'fallback',
+                },
+            });
+        }
+        catch (error) {
+            console.error('[PublicProduct] getRelatedBySlug error:', error);
+            return c.json({ success: false, error: 'Failed to fetch related products' }, 500);
         }
     }
     /** Minimal live listing for chat tag cards (`<YourSaaS>{id}</YourSaaS>`). */
@@ -291,6 +326,7 @@ export class PublicProductController {
                     location: developers.location,
                     createdAt: developers.createdAt,
                     plan: developers.plan,
+                    planEndDate: developers.planEndDate,
                     kycStatus: developers.kycStatus,
                 },
                 categoryName: productCategories.name,
@@ -402,7 +438,13 @@ export class PublicProductController {
                     developerRepliedAt: r.developerRepliedAt,
                 })),
                 listingStatus: normalizeListingStatus(p.listingStatus),
-                developer: row.developer,
+                developer: (() => {
+                    const { planEndDate, plan, ...rest } = row.developer;
+                    return {
+                        ...rest,
+                        plan: effectiveDeveloperPlan(plan, planEndDate),
+                    };
+                })(),
             };
             return c.json({ success: true, data: { product } });
         }

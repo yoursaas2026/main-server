@@ -5,6 +5,7 @@ import fs from 'fs';
 import path from 'path';
 import { parseExperienceYears, parseServicesOffered, serializeServicesOffered, } from '../../utils/developer-profile-parse.js';
 import { deleteDeveloperProfileMedia, saveDeveloperProfileImage, } from '../../utils/developer-profile-media.js';
+import { ensureDeveloperPlanNotExpired } from '../../utils/developer-plan.js';
 const RESUME_MAX_BYTES = 10 * 1024 * 1024;
 function field(body, key) {
     const v = body[key];
@@ -47,6 +48,7 @@ export class DeveloperProfileController {
                 openToOpenSource: developers.openToOpenSource,
                 availableForHire: developers.availableForHire,
                 plan: developers.plan,
+                planEndDate: developers.planEndDate,
                 status: developers.status,
                 kycStatus: developers.kycStatus,
             })
@@ -55,7 +57,17 @@ export class DeveloperProfileController {
                 .limit(1);
             if (!developer)
                 return c.json({ success: false, error: 'Developer not found' }, 404);
-            return c.json({ success: true, data: { developer } });
+            const plan = await ensureDeveloperPlanNotExpired(developer.id);
+            return c.json({
+                success: true,
+                data: {
+                    developer: {
+                        ...developer,
+                        plan,
+                        planEndDate: developer.planEndDate,
+                    },
+                },
+            });
         }
         catch (error) {
             console.error('[DeveloperProfile] getProfile error:', error);

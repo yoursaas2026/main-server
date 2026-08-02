@@ -21,6 +21,8 @@ import {
     cleanupReplacedProductMedia,
 } from '../../utils/product-media-cleanup.js';
 import { assertDeveloperMarketplaceReady } from '../../utils/developer-onboarding.js';
+import { queueListingVectorSync } from '../../services/discovery/listing-indexer.js';
+import { deleteListingVector } from '../../services/discovery/vector-store.js';
 
 function assertDeveloper(c: Context) {
     const jwtUser = c.get('user') as { id: number; role: string } | undefined;
@@ -378,6 +380,8 @@ export class DeveloperProductController {
                 .values(toDbRecord(input, jwtUser.id))
                 .returning();
 
+            queueListingVectorSync(created.id);
+
             return c.json(
                 {
                     success: true,
@@ -644,6 +648,8 @@ export class DeveloperProductController {
                 { iconUrl: input.iconUrl, screenshotUrls: input.screenshotUrls }
             );
 
+            queueListingVectorSync(updated.id);
+
             return c.json({
                 success: true,
                 message: 'Product updated',
@@ -684,6 +690,7 @@ export class DeveloperProductController {
                 ));
 
             cleanupAllProductMediaForRow(existing);
+            void deleteListingVector(parsedId.data.id);
 
             return c.json({ success: true, message: 'Product deleted' });
         } catch (error) {

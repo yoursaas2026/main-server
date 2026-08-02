@@ -8,6 +8,7 @@ import { oauthService } from '../../services/oauth.service.js';
 import { env } from '../../config/env.js';
 import { RegisterSchema, LoginSchema, ForgotPasswordSchema, ResetPasswordSchema, } from '../../types/auth.types.js';
 import { buildDeveloperOnboardingStatus } from '../../utils/developer-onboarding.js';
+import { effectiveDeveloperPlan, ensureDeveloperPlanNotExpired, } from '../../utils/developer-plan.js';
 // ─── Helper: pick only safe fields to send back to clients ────────────────────
 function pickDeveloperAuthProfile(dev) {
     return {
@@ -19,7 +20,7 @@ function pickDeveloperAuthProfile(dev) {
         coverPicture: dev.coverPicture,
         isEmailVerified: dev.isEmailVerified,
         kycStatus: dev.kycStatus,
-        plan: dev.plan,
+        plan: effectiveDeveloperPlan(dev.plan, dev.planEndDate),
         planBillingCycle: dev.planBillingCycle,
         planStartDate: dev.planStartDate,
         planEndDate: dev.planEndDate,
@@ -57,7 +58,7 @@ function pickDeveloperPublicProfile(dev) {
         isEmailVerified: dev.isEmailVerified,
         isPhoneVerified: dev.isPhoneVerified,
         authProvider: dev.authProvider,
-        plan: dev.plan,
+        plan: effectiveDeveloperPlan(dev.plan, dev.planEndDate),
         planBillingCycle: dev.planBillingCycle,
         planStartDate: dev.planStartDate,
         planEndDate: dev.planEndDate,
@@ -151,9 +152,10 @@ export class DeveloperAuthController {
                 .where(eq(developers.id, user.id))
                 .catch((err) => console.error('[DeveloperAuth] Failed to update lastLoginAt:', err));
             const token = generateToken({ id: user.id, email: user.email, role: 'developer' });
+            const effectivePlan = await ensureDeveloperPlanNotExpired(user.id);
             const data = {
                 token,
-                user: pickDeveloperAuthProfile(user),
+                user: pickDeveloperAuthProfile({ ...user, plan: effectivePlan }),
             };
             return c.json({ success: true, message: 'Login successful', data });
         }
@@ -215,7 +217,8 @@ export class DeveloperAuthController {
                 .catch((err) => console.error('[DeveloperAuth] Failed to update lastLoginAt:', err));
         }
         const token = generateToken({ id: user.id, email: user.email, role: 'developer' });
-        return { token, user: pickDeveloperAuthProfile(user) };
+        const effectivePlan = await ensureDeveloperPlanNotExpired(user.id);
+        return { token, user: pickDeveloperAuthProfile({ ...user, plan: effectivePlan }) };
     }
     // ── Google OAuth ──────────────────────────────────────────────────────────
     async googleAuth(c) {
@@ -390,11 +393,13 @@ export class DeveloperAuthController {
             if (!developer) {
                 return c.json({ success: false, error: 'User not found' }, 404);
             }
+            // Sticky DB plan can still say Pro/Ultimate after planEndDate — write Base + return effective.
+            const effectivePlan = await ensureDeveloperPlanNotExpired(developer.id);
             return c.json({
                 success: true,
                 message: 'User fetched successfully',
                 data: {
-                    user: pickDeveloperPublicProfile(developer),
+                    user: pickDeveloperPublicProfile({ ...developer, plan: effectivePlan }),
                     onboarding: buildDeveloperOnboardingStatus(developer),
                 },
             });

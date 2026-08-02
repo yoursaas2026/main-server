@@ -79,4 +79,18 @@ export const env = {
     CONTRACT_AUTO_SETTLEMENT_ENABLED: process.env.CONTRACT_AUTO_SETTLEMENT_ENABLED === 'true',
     /** Background job interval for auto-completing submitted contracts past client deadline (ms). */
     CONTRACT_AUTO_COMPLETE_INTERVAL_MS: Math.max(60_000, parseInt(process.env.CONTRACT_AUTO_COMPLETE_INTERVAL_MS || '300000', 10)),
+    /** Background job interval for downgrading expired Pro/Ultimate plans to Base (ms). */
+    SUBSCRIPTION_EXPIRY_INTERVAL_MS: Math.max(60_000, parseInt(process.env.SUBSCRIPTION_EXPIRY_INTERVAL_MS || '300000', 10)),
+    /** OpenAI — Astra listing autofill (Ultimate plan) */
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY || '',
+    OPENAI_MODEL: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+    /** Discovery — embeddings + Qdrant (S2) */
+    OPENAI_EMBEDDING_MODEL: process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small',
+    /** Must match embedding model dimension (text-embedding-3-small = 1536) */
+    QDRANT_VECTOR_SIZE: parseInt(process.env.QDRANT_VECTOR_SIZE || '1536', 10),
+    QDRANT_URL: process.env.QDRANT_URL || 'http://127.0.0.1:6333',
+    QDRANT_API_KEY: process.env.QDRANT_API_KEY || '',
+    QDRANT_COLLECTION: process.env.QDRANT_COLLECTION || 'yoursaas_listings_v1',
+    /** When false, skip vector search and use keyword/category fallback only */
+    DISCOVERY_VECTOR_ENABLED: process.env.DISCOVERY_VECTOR_ENABLED !== 'false',
 };

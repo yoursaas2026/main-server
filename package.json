@@ -8,11 +8,16 @@
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
     "db:push": "drizzle-kit push",
-    "seed:admin": "tsx scripts/seed-admin.ts"
+    "seed:admin": "tsx scripts/seed-admin.ts",
+    "discovery:reindex": "tsx scripts/reindex-listings.ts",
+    "discovery:backfill-profiles": "tsx scripts/backfill-interest-profiles.ts",
+    "qdrant:up": "docker compose -f docker-compose.qdrant.yml up -d",
+    "qdrant:down": "docker compose -f docker-compose.qdrant.yml down"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.9",
     "@hono/zod-validator": "^0.7.6",
+    "@qdrant/js-client-rest": "^1.18.0",
     "@types/bcrypt": "^6.0.0",
     "axios": "^1.13.4",
     "bcrypt": "^6.0.0",

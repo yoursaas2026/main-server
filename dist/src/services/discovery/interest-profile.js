@@ -1,26 +1,5 @@
 import { BASE_WEIGHTS, INTEREST_TAG_CAP } from './weights.js';
-
-export type InterestProfile = {
-    version: 1;
-    base: Record<string, number>;
-    learned: Record<string, number>;
-    updatedAt: string;
-};
-
-export type QuestionnaireInput = {
-    industry?: string | null;
-    companySize?: string | null;
-    budgetBand?: string | null;
-    technicalComfort?: string | null;
-    primaryGoals?: string[];
-    painPoints?: string[];
-    preferredIntegrations?: string[];
-    preferredStacks?: string[];
-    /** Resolved category names for interestedCategoryIds */
-    categoryNames?: string[];
-};
-
-export function emptyInterestProfile(): InterestProfile {
+export function emptyInterestProfile() {
     return {
         version: 1,
         base: {},
@@ -28,23 +7,23 @@ export function emptyInterestProfile(): InterestProfile {
         updatedAt: new Date().toISOString(),
     };
 }
-
-export function parseInterestProfile(raw: string | null | undefined): InterestProfile {
-    if (!raw?.trim()) return emptyInterestProfile();
+export function parseInterestProfile(raw) {
+    if (!raw?.trim())
+        return emptyInterestProfile();
     try {
-        const parsed = JSON.parse(raw) as Partial<InterestProfile>;
+        const parsed = JSON.parse(raw);
         return {
             version: 1,
             base: parsed.base && typeof parsed.base === 'object' ? parsed.base : {},
             learned: parsed.learned && typeof parsed.learned === 'object' ? parsed.learned : {},
             updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : new Date().toISOString(),
         };
-    } catch {
+    }
+    catch {
         return emptyInterestProfile();
     }
 }
-
-export function serializeInterestProfile(profile: InterestProfile): string {
+export function serializeInterestProfile(profile) {
     return JSON.stringify({
         version: 1,
         base: profile.base,
@@ -52,15 +31,16 @@ export function serializeInterestProfile(profile: InterestProfile): string {
         updatedAt: profile.updatedAt || new Date().toISOString(),
     });
 }
-
-function bump(map: Record<string, number>, tag: string, amount: number) {
-    if (!tag || !amount) return;
+function bump(map, tag, amount) {
+    if (!tag || !amount)
+        return;
     const next = Math.min(INTEREST_TAG_CAP, Math.max(0, (map[tag] || 0) + amount));
-    if (next <= 0) delete map[tag];
-    else map[tag] = next;
+    if (next <= 0)
+        delete map[tag];
+    else
+        map[tag] = next;
 }
-
-function slugTag(prefix: string, value: string): string {
+function slugTag(prefix, value) {
     const v = value
         .trim()
         .toLowerCase()
@@ -68,14 +48,9 @@ function slugTag(prefix: string, value: string): string {
         .replace(/^_|_$/g, '');
     return v ? `${prefix}:${v}` : '';
 }
-
 /** Rebuild `base` from questionnaire answers; preserves `learned`. */
-export function rebuildBaseInterestProfile(
-    existing: InterestProfile,
-    input: QuestionnaireInput
-): InterestProfile {
-    const base: Record<string, number> = {};
-
+export function rebuildBaseInterestProfile(existing, input) {
+    const base = {};
     if (input.industry?.trim()) {
         bump(base, slugTag('industry', input.industry), BASE_WEIGHTS.industry);
     }
@@ -88,7 +63,6 @@ export function rebuildBaseInterestProfile(
     if (input.technicalComfort?.trim()) {
         bump(base, slugTag('experience', input.technicalComfort), BASE_WEIGHTS.experience);
     }
-
     for (const goal of input.primaryGoals || []) {
         bump(base, slugTag('goal', goal), BASE_WEIGHTS.goal);
     }
@@ -104,7 +78,6 @@ export function rebuildBaseInterestProfile(
     for (const stack of input.preferredStacks || []) {
         bump(base, slugTag('stack', stack), BASE_WEIGHTS.stack);
     }
-
     return {
         version: 1,
         base,
@@ -112,23 +85,18 @@ export function rebuildBaseInterestProfile(
         updatedAt: new Date().toISOString(),
     };
 }
-
-export function effectiveWeights(profile: InterestProfile): Record<string, number> {
-    const out: Record<string, number> = { ...profile.base };
+export function effectiveWeights(profile) {
+    const out = { ...profile.base };
     for (const [tag, w] of Object.entries(profile.learned)) {
         out[tag] = Math.min(INTEREST_TAG_CAP, (out[tag] || 0) + w);
     }
     return out;
 }
-
-export function applyLearnedDelta(
-    profile: InterestProfile,
-    tags: string[],
-    delta: number
-): InterestProfile {
+export function applyLearnedDelta(profile, tags, delta) {
     const learned = { ...profile.learned };
     for (const tag of tags) {
-        if (!tag) continue;
+        if (!tag)
+            continue;
         bump(learned, tag, delta);
     }
     return {
@@ -137,31 +105,24 @@ export function applyLearnedDelta(
         updatedAt: new Date().toISOString(),
     };
 }
-
-export function topTags(profile: InterestProfile, limit = 8): string[] {
+export function topTags(profile, limit = 8) {
     return Object.entries(effectiveWeights(profile))
         .sort((a, b) => b[1] - a[1])
         .slice(0, limit)
         .map(([tag]) => tag);
 }
-
 /** Top tags from `learned` only (exploration signal). */
-export function topLearnedTags(
-    profile: InterestProfile,
-    limit = 5,
-    minWeight = 8
-): Array<{ tag: string; weight: number }> {
+export function topLearnedTags(profile, limit = 5, minWeight = 8) {
     return Object.entries(profile.learned)
         .filter(([, w]) => typeof w === 'number' && w >= minWeight)
         .sort((a, b) => b[1] - a[1])
         .slice(0, limit)
         .map(([tag, weight]) => ({ tag, weight }));
 }
-
 /** `category:ai_automation` → `AI Automation` */
-export function humanizeInterestTag(tag: string): string {
+export function humanizeInterestTag(tag) {
     const raw = (tag.includes(':') ? tag.split(':').slice(1).join(':') : tag).replace(/_/g, ' ').trim();
-    if (!raw) return 'topics you explored';
+    if (!raw)
+        return 'topics you explored';
     return raw.replace(/\b\w/g, (c) => c.toUpperCase());
 }
-

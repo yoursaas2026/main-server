@@ -6,6 +6,7 @@ publicProductRoutes.get('/categories/list', (c) => publicProductController.listC
 publicProductRoutes.get('/', optionalAuthMiddleware, (c) => publicProductController.listLive(c));
 publicProductRoutes.get('/by-id/:id/contract-pricing', optionalAuthMiddleware, (c) => publicProductController.getContractPricingById(c));
 publicProductRoutes.get('/card/:id', optionalAuthMiddleware, (c) => publicProductController.getCardById(c));
+publicProductRoutes.get('/:slug/related', optionalAuthMiddleware, (c) => publicProductController.getRelatedBySlug(c));
 publicProductRoutes.get('/:slug', optionalAuthMiddleware, (c) => publicProductController.getBySlug(c));
 publicProductRoutes.get('/:slug/reviews', optionalAuthMiddleware, (c) => publicProductController.listReviews(c));
 publicProductRoutes.post('/:slug/reviews', authMiddleware, (c) => publicProductController.createReview(c));

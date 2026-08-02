@@ -2,29 +2,25 @@ import { eq, inArray } from 'drizzle-orm';
 import { db } from '../../db/index.js';
 import { clients, productCategories } from '../../db/schema.js';
 import { parseClientJsonIds, serializeJsonArray } from '../../utils/client-onboarding.js';
-import {
-    parseInterestProfile,
-    rebuildBaseInterestProfile,
-    serializeInterestProfile,
-} from './interest-profile.js';
-
-function parseStringArray(raw: string | null | undefined): string[] {
-    if (!raw?.trim()) return [];
+import { parseInterestProfile, rebuildBaseInterestProfile, serializeInterestProfile, } from './interest-profile.js';
+function parseStringArray(raw) {
+    if (!raw?.trim())
+        return [];
     try {
         const v = JSON.parse(raw);
         return Array.isArray(v) ? v.map(String).filter(Boolean) : [];
-    } catch {
+    }
+    catch {
         return [];
     }
 }
-
 /** Rebuild interest `base` from current client questionnaire fields; keep `learned`. */
-export async function refreshClientInterestProfile(clientId: number): Promise<void> {
+export async function refreshClientInterestProfile(clientId) {
     const [client] = await db.select().from(clients).where(eq(clients.id, clientId)).limit(1);
-    if (!client) return;
-
+    if (!client)
+        return;
     const categoryIds = parseClientJsonIds(client.interestedCategoryIds);
-    let categoryNames: string[] = [];
+    let categoryNames = [];
     if (categoryIds.length > 0) {
         const cats = await db
             .select({ id: productCategories.id, name: productCategories.name })
@@ -32,7 +28,6 @@ export async function refreshClientInterestProfile(clientId: number): Promise<vo
             .where(inArray(productCategories.id, categoryIds));
         categoryNames = cats.map((c) => c.name);
     }
-
     const existing = parseInterestProfile(client.interestProfile);
     const next = rebuildBaseInterestProfile(existing, {
         industry: client.industry,
@@ -45,33 +40,12 @@ export async function refreshClientInterestProfile(clientId: number): Promise<vo
         preferredStacks: parseStringArray(client.preferredStacks),
         categoryNames,
     });
-
     await db
         .update(clients)
         .set({
-            interestProfile: serializeInterestProfile(next),
-            updatedAt: new Date(),
-        })
+        interestProfile: serializeInterestProfile(next),
+        updatedAt: new Date(),
+    })
         .where(eq(clients.id, clientId));
 }
-
-/**
- * For buyers who completed onboarding before interest_profile existed:
- * rebuild `base` once when profile is empty (keeps any `learned`).
- */
-export async function ensureClientInterestProfile(clientId: number): Promise<void> {
-    const [client] = await db
-        .select({ interestProfile: clients.interestProfile })
-        .from(clients)
-        .where(eq(clients.id, clientId))
-        .limit(1);
-    if (!client) return;
-
-    const parsed = parseInterestProfile(client.interestProfile);
-    const hasBase = Object.keys(parsed.base).length > 0;
-    if (hasBase) return;
-
-    await refreshClientInterestProfile(clientId);
-}
-
 export { serializeJsonArray, parseStringArray };
