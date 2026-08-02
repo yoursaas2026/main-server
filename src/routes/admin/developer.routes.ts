@@ -10,5 +10,6 @@ adminDeveloperRoutes.get('/', authMiddleware, (c) => adminDeveloperController.ge
 adminDeveloperRoutes.get('/:id', authMiddleware, (c) => adminDeveloperController.getDeveloperDetails(c));
 adminDeveloperRoutes.put('/:id/kyc', authMiddleware, (c) => adminDeveloperController.updateKycStatus(c));
 adminDeveloperRoutes.put('/:id/block', authMiddleware, (c) => adminDeveloperController.blockDeveloper(c));
+adminDeveloperRoutes.put('/:id/access', authMiddleware, (c) => adminDeveloperController.overrideAccess(c));
 
 export default adminDeveloperRoutes;

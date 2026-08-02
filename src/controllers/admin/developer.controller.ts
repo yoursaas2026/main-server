@@ -147,6 +147,11 @@ export class AdminDeveloperController {
 
     async blockDeveloper(c: Context) {
         try {
+            const jwtUser = c.get('user');
+            if (!jwtUser || jwtUser.role !== 'admin') {
+                return c.json({ success: false, error: 'Unauthorized' }, 401);
+            }
+
             const devId = parseInt(c.req.param('id'), 10);
             if (isNaN(devId)) return c.json({ success: false, error: 'Invalid developer ID' }, 400);
 
@@ -175,8 +180,6 @@ export class AdminDeveloperController {
                 return c.json({ success: false, error: 'Developer not found' }, 404);
             }
 
-            // Note: you can optionally send an email hook out to the blocked developer here.
-            
             return c.json({ 
                 success: true, 
                 message: isBlocked ? `Developer blocked successfully.` : `Developer unblocked successfully.`, 
@@ -185,6 +188,88 @@ export class AdminDeveloperController {
         } catch (error) {
             console.error('[AdminDeveloper] blockDeveloper error:', error);
             return c.json({ success: false, error: 'Failed to update block status' }, 500);
+        }
+    }
+
+    /**
+     * Manual account access override:
+     * - status: active | inactive | blocked
+     * - forceBankVerified: mark Cashfree bank check complete (onboarding unlock)
+     * - forceKycVerified: approve KYC
+     */
+    async overrideAccess(c: Context) {
+        const jwtUser = c.get('user');
+        if (!jwtUser || jwtUser.role !== 'admin') {
+            return c.json({ success: false, error: 'Unauthorized' }, 401);
+        }
+
+        const devId = parseInt(c.req.param('id'), 10);
+        if (isNaN(devId)) return c.json({ success: false, error: 'Invalid developer ID' }, 400);
+
+        const body = await c.req.json().catch(() => null);
+        if (!body || typeof body !== 'object') {
+            return c.json({ success: false, error: 'Invalid body' }, 400);
+        }
+
+        const statusRaw = typeof body.status === 'string' ? body.status.trim().toLowerCase() : undefined;
+        const forceBankVerified = body.forceBankVerified === true;
+        const forceKycVerified = body.forceKycVerified === true;
+
+        if (statusRaw && !['active', 'inactive', 'blocked'].includes(statusRaw)) {
+            return c.json({ success: false, error: 'status must be active, inactive, or blocked' }, 400);
+        }
+        if (!statusRaw && !forceBankVerified && !forceKycVerified) {
+            return c.json(
+                {
+                    success: false,
+                    error: 'Provide status and/or forceBankVerified / forceKycVerified',
+                },
+                400
+            );
+        }
+
+        try {
+            const patch: Partial<typeof developers.$inferInsert> = { updatedAt: new Date() };
+            if (statusRaw) {
+                patch.status = statusRaw;
+                if (statusRaw === 'active') patch.blockReason = null;
+            }
+            if (forceBankVerified) {
+                patch.payoutBankValidationStatus = 'completed';
+                patch.payoutBankValidationAccountStatus = 'valid';
+                patch.payoutBankValidationDetails =
+                    'Manually marked verified by admin (Cashfree beneficiary may still need sync for payouts).';
+                patch.payoutBankValidationAt = new Date();
+            }
+            if (forceKycVerified) {
+                patch.kycStatus = 'verified';
+                patch.kycVerifiedAt = new Date();
+                patch.kycRejectedAt = null;
+                patch.kycRejectionReason = null;
+            }
+
+            const [updated] = await db
+                .update(developers)
+                .set(patch)
+                .where(eq(developers.id, devId))
+                .returning({
+                    id: developers.id,
+                    status: developers.status,
+                    kycStatus: developers.kycStatus,
+                    payoutBankValidationStatus: developers.payoutBankValidationStatus,
+                    payoutBankValidationAccountStatus: developers.payoutBankValidationAccountStatus,
+                });
+
+            if (!updated) return c.json({ success: false, error: 'Developer not found' }, 404);
+
+            return c.json({
+                success: true,
+                message: 'Developer access updated',
+                data: { developer: updated },
+            });
+        } catch (error) {
+            console.error('[AdminDeveloper] overrideAccess error:', error);
+            return c.json({ success: false, error: 'Failed to update developer access' }, 500);
         }
     }
 }

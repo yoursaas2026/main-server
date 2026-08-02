@@ -286,6 +286,10 @@ export class DeveloperAuthController {
                 );
         }
 
+        if (user.status && user.status !== 'active') {
+            throw new Error('ACCOUNT_INACTIVE');
+        }
+
         const token = generateToken({ id: user.id, email: user.email, role: 'developer' });
 
         const effectivePlan = await ensureDeveloperPlanNotExpired(user.id);
@@ -317,7 +321,10 @@ export class DeveloperAuthController {
             return c.redirect(`${env.DEVELOPER_PORTAL_URL}/auth/callback?token=${result.token}`);
         } catch (error) {
             console.error('[DeveloperAuth] googleCallback error:', error);
-            return c.redirect(`${env.DEVELOPER_PORTAL_URL}/login?error=google_auth_failed`);
+            const inactive = error instanceof Error && error.message === 'ACCOUNT_INACTIVE';
+            return c.redirect(
+                `${env.DEVELOPER_PORTAL_URL}/login?error=${inactive ? 'account_inactive' : 'google_auth_failed'}`
+            );
         }
     }
 
@@ -346,7 +353,10 @@ export class DeveloperAuthController {
             return c.redirect(`${env.DEVELOPER_PORTAL_URL}/auth/callback?token=${result.token}`);
         } catch (error) {
             console.error('[DeveloperAuth] microsoftCallback error:', error);
-            return c.redirect(`${env.DEVELOPER_PORTAL_URL}/login?error=microsoft_auth_failed`);
+            const inactive = error instanceof Error && error.message === 'ACCOUNT_INACTIVE';
+            return c.redirect(
+                `${env.DEVELOPER_PORTAL_URL}/login?error=${inactive ? 'account_inactive' : 'microsoft_auth_failed'}`
+            );
         }
     }
 
@@ -376,7 +386,10 @@ export class DeveloperAuthController {
             return c.redirect(`${env.DEVELOPER_PORTAL_URL}/auth/callback?token=${result.token}`);
         } catch (error) {
             console.error('[DeveloperAuth] appleCallback error:', error);
-            return c.redirect(`${env.DEVELOPER_PORTAL_URL}/login?error=apple_auth_failed`);
+            const inactive = error instanceof Error && error.message === 'ACCOUNT_INACTIVE';
+            return c.redirect(
+                `${env.DEVELOPER_PORTAL_URL}/login?error=${inactive ? 'account_inactive' : 'apple_auth_failed'}`
+            );
         }
     }
 

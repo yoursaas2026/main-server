@@ -161,6 +161,23 @@ export const cashfreePayoutService = {
             const response = await CashfreePayout.PayoutCreateBeneficiary(CASHFREE_PAYOUT_API_VERSION, undefined, body);
             return mapBeneficiaryStatus(response.data);
         } catch (err) {
+            const msg = parseCashfreeError(err).toLowerCase();
+            const isDuplicate =
+                msg.includes('already exists') ||
+                msg.includes('already exist') ||
+            msg.includes('duplicate') ||
+                (msg.includes('beneficiary_id') && msg.includes('exist'));
+
+            if (isDuplicate) {
+                // Beneficiary was created earlier (retry / re-verify) — fetch and sync status.
+                try {
+                    return await this.fetchBeneficiary(beneficiaryId);
+                } catch (fetchErr) {
+                    throw new Error(
+                        `${parseCashfreeError(err)} — tried to refresh existing beneficiary but failed: ${parseCashfreeError(fetchErr)}`
+                    );
+                }
+            }
             throw new Error(parseCashfreeError(err));
         }
     },

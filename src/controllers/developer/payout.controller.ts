@@ -110,7 +110,11 @@ export class DeveloperPayoutController {
 
         try {
             const [existing] = await db
-                .select({ num: developers.payoutAccountNumber })
+                .select({
+                    num: developers.payoutAccountNumber,
+                    payoutRoutingCode: developers.payoutRoutingCode,
+                    payoutCashfreeBeneficiaryId: developers.payoutCashfreeBeneficiaryId,
+                })
                 .from(developers)
                 .where(eq(developers.id, user.id))
                 .limit(1);
@@ -132,27 +136,45 @@ export class DeveloperPayoutController {
                 return c.json({ success: false, error: 'Account number is required' }, 400);
             }
 
+            const prevIfsc = (existing?.payoutRoutingCode ?? '').trim().toUpperCase();
+            const nextIfsc = routingCode.trim().toUpperCase();
+            const accountChanged =
+                replacing &&
+                existingNum.length > 0 &&
+                nextAccountNumber.replace(/\s/g, '') !== existingNum.replace(/\s/g, '');
+            const ifscChanged = prevIfsc.length > 0 && prevIfsc !== nextIfsc;
+            const shouldResetVerification = accountChanged || ifscChanged || !existing?.payoutCashfreeBeneficiaryId;
+
             await db
                 .update(developers)
                 .set({
                     payoutBankCountry: country,
                     payoutAccountHolderName: accountHolderName,
                     payoutBankName: bankName,
-                    payoutRoutingCode: routingCode.trim().toUpperCase(),
+                    payoutRoutingCode: nextIfsc,
                     payoutAccountNumber: nextAccountNumber,
                     payoutAccountType: accountType,
                     payoutBankDetailsUpdatedAt: new Date(),
-                    payoutCashfreeBeneficiaryId: null,
-                    payoutBankValidationId: null,
-                    payoutBankValidationStatus: null,
-                    payoutBankValidationAccountStatus: null,
-                    payoutBankValidationDetails: null,
-                    payoutBankValidationAt: null,
+                    ...(shouldResetVerification
+                        ? {
+                              payoutCashfreeBeneficiaryId: null,
+                              payoutBankValidationId: null,
+                              payoutBankValidationStatus: null,
+                              payoutBankValidationAccountStatus: null,
+                              payoutBankValidationDetails: null,
+                              payoutBankValidationAt: null,
+                          }
+                        : {}),
                     updatedAt: new Date(),
                 })
                 .where(eq(developers.id, user.id));
 
-            return c.json({ success: true, message: 'Payout bank details saved' });
+            return c.json({
+                success: true,
+                message: shouldResetVerification
+                    ? 'Payout bank details saved — re-verify with Cashfree if account or IFSC changed'
+                    : 'Payout bank details saved',
+            });
         } catch (err) {
             console.error('[DeveloperPayout] putBank error:', err);
             return c.json({ success: false, error: 'Failed to save payout bank details' }, 500);
