@@ -44,6 +44,34 @@ export function vectorStoreConfigured(): boolean {
     return Boolean(env.DISCOVERY_VECTOR_ENABLED && env.QDRANT_URL);
 }
 
+/** Qdrant Cloud requires payload indexes for filtered fields. */
+async function ensurePayloadIndexes(client: QdrantClient, collection: string): Promise<void> {
+    const indexes: Array<{ field_name: string; field_schema: 'keyword' | 'integer' | 'bool' }> = [
+        { field_name: 'listingStatus', field_schema: 'keyword' },
+        { field_name: 'categoryId', field_schema: 'integer' },
+        { field_name: 'verified', field_schema: 'bool' },
+    ];
+
+    for (const idx of indexes) {
+        try {
+            await client.createPayloadIndex(collection, {
+                wait: true,
+                field_name: idx.field_name,
+                field_schema: idx.field_schema,
+            });
+            console.log(`[Discovery] Payload index ready: ${idx.field_name} (${idx.field_schema})`);
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            // Already exists / conflict — fine
+            if (/already|exist|conflict/i.test(msg)) continue;
+            // Some Cloud responses nest the message
+            const data = (err as { data?: { status?: { error?: string } } })?.data?.status?.error;
+            if (data && /already|exist|conflict/i.test(data)) continue;
+            throw err;
+        }
+    }
+}
+
 export async function ensureListingCollection(): Promise<boolean> {
     const client = getClient();
     if (!client) return false;
@@ -65,6 +93,8 @@ export async function ensureListingCollection(): Promise<boolean> {
             });
             console.log(`[Discovery] Created Qdrant collection ${name} (dim=${env.QDRANT_VECTOR_SIZE})`);
         }
+        // Always ensure filter indexes (Cloud rejects filtered search without them)
+        await ensurePayloadIndexes(client, name);
     })().catch((err) => {
         ensurePromise = null;
         console.error('[Discovery] ensureListingCollection failed:', err);
