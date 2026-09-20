@@ -20,9 +20,24 @@ function getClient(): QdrantClient | null {
         qdrant = new QdrantClient({
             url: env.QDRANT_URL,
             apiKey: env.QDRANT_API_KEY || undefined,
+            // Skip version probe — fails on suspended Cloud clusters / some auth paths
+            checkCompatibility: false,
         });
     }
     return qdrant;
+}
+
+/** Lightweight ping — useful after waking a suspended Qdrant Cloud free cluster. */
+export async function pingQdrant(): Promise<{ ok: boolean; error?: string }> {
+    const client = getClient();
+    if (!client) return { ok: false, error: 'Qdrant not configured' };
+    try {
+        await client.getCollections();
+        return { ok: true };
+    } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: msg };
+    }
 }
 
 export function vectorStoreConfigured(): boolean {
