@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 import { and, avg, count, desc, eq, ne } from 'drizzle-orm';
 import { db } from '../../db/index.js';
-import { clients, developerProducts, productCategories, productReviews } from '../../db/schema.js';
+import { clients, contracts, developerProducts, productCategories, productReleases, productReviews, clientListingEvents } from '../../db/schema.js';
 import { saveProductImageFile } from '../../utils/product-media-save.js';
 import {
     DeveloperProductUpsertSchema,
@@ -670,27 +670,51 @@ export class DeveloperProductController {
             return c.json({ success: false, error: 'Invalid product ID' }, 400);
         }
 
+        const productId = parsedId.data.id;
+
         try {
             const [existing] = await db
                 .select()
                 .from(developerProducts)
                 .where(and(
-                    eq(developerProducts.id, parsedId.data.id),
+                    eq(developerProducts.id, productId),
                     eq(developerProducts.developerId, jwtUser.id)
                 ))
                 .limit(1);
 
             if (!existing) return c.json({ success: false, error: 'Product not found' }, 404);
 
-            await db
-                .delete(developerProducts)
-                .where(and(
-                    eq(developerProducts.id, parsedId.data.id),
-                    eq(developerProducts.developerId, jwtUser.id)
-                ));
+            const [contractRef] = await db
+                .select({ id: contracts.id })
+                .from(contracts)
+                .where(eq(contracts.productId, productId))
+                .limit(1);
+
+            if (contractRef) {
+                return c.json(
+                    {
+                        success: false,
+                        error: 'This product has marketplace contracts and cannot be deleted. Archive it as draft instead, or contact support.',
+                        code: 'PRODUCT_HAS_CONTRACTS',
+                    },
+                    409
+                );
+            }
+
+            await db.transaction(async (tx) => {
+                await tx.delete(productReviews).where(eq(productReviews.productId, productId));
+                await tx.delete(productReleases).where(eq(productReleases.productId, productId));
+                await tx.delete(clientListingEvents).where(eq(clientListingEvents.productId, productId));
+                await tx
+                    .delete(developerProducts)
+                    .where(and(
+                        eq(developerProducts.id, productId),
+                        eq(developerProducts.developerId, jwtUser.id)
+                    ));
+            });
 
             cleanupAllProductMediaForRow(existing);
-            void deleteListingVector(parsedId.data.id);
+            void deleteListingVector(productId);
 
             return c.json({ success: true, message: 'Product deleted' });
         } catch (error) {

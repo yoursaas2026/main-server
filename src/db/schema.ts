@@ -313,7 +313,9 @@ export const developerProducts = pgTable('developer_products', {
 export const clientListingEvents = pgTable('client_listing_events', {
     id: serial('id').primaryKey(),
     clientId: integer('client_id').references(() => clients.id).notNull(),
-    productId: integer('product_id').references(() => developerProducts.id).notNull(),
+    productId: integer('product_id')
+        .references(() => developerProducts.id, { onDelete: 'cascade' })
+        .notNull(),
     eventType: varchar('event_type', { length: 24 }).notNull(),
     /** home_recs | search | pdp | pdp_similar | dashboard | compare | … */
     surface: varchar('surface', { length: 40 }),
@@ -328,7 +330,7 @@ export const clientListingEvents = pgTable('client_listing_events', {
 export const productReleases = pgTable('product_releases', {
     id: serial('id').primaryKey(),
     productId: integer('product_id')
-        .references(() => developerProducts.id)
+        .references(() => developerProducts.id, { onDelete: 'cascade' })
         .notNull(),
     version: varchar('version', { length: 40 }).notNull(),
     title: varchar('title', { length: 160 }),
@@ -349,7 +351,9 @@ export const productCategories = pgTable('product_categories', {
 
 export const productReviews = pgTable('product_reviews', {
     id: serial('id').primaryKey(),
-    productId: integer('product_id').references(() => developerProducts.id).notNull(),
+    productId: integer('product_id')
+        .references(() => developerProducts.id, { onDelete: 'cascade' })
+        .notNull(),
     clientId: integer('client_id').references(() => clients.id).notNull(),
     rating: integer('rating').notNull(),
     comment: text('comment').notNull(),
