@@ -41,12 +41,17 @@ export const ResetPasswordSchema = z.object({
         }),
 });
 
+export const VerifyEmailSchema = z.object({
+    token: z.string().min(1, 'Verification token is required'),
+});
+
 // ─── Inferred Types from Schemas ───────────────────────────────────────────────
 
 export type RegisterInput = z.infer<typeof RegisterSchema>;
 export type LoginInput = z.infer<typeof LoginSchema>;
 export type ForgotPasswordInput = z.infer<typeof ForgotPasswordSchema>;
 export type ResetPasswordInput = z.infer<typeof ResetPasswordSchema>;
+export type VerifyEmailInput = z.infer<typeof VerifyEmailSchema>;
 
 // ─── Standardized API Response Shapes ─────────────────────────────────────────
 

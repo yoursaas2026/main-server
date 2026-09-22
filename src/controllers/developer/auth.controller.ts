@@ -12,6 +12,7 @@ import {
     LoginSchema,
     ForgotPasswordSchema,
     ResetPasswordSchema,
+    VerifyEmailSchema,
     type DeveloperAuthProfile,
     type DeveloperPublicProfile,
     type AuthResponseData,
@@ -21,6 +22,8 @@ import {
     effectiveDeveloperPlan,
     ensureDeveloperPlanNotExpired,
 } from '../../utils/developer-plan.js';
+
+const EMAIL_VERIFY_TTL_MS = 48 * 60 * 60 * 1000;
 
 // ─── Helper: pick only safe fields to send back to clients ────────────────────
 
@@ -121,6 +124,8 @@ export class DeveloperAuthController {
             }
 
             const hashedPassword = await hashPassword(password);
+            const verificationToken = generateResetToken();
+            const verificationExpiry = new Date(Date.now() + EMAIL_VERIFY_TTL_MS);
 
             const [newDev] = await db
                 .insert(developers)
@@ -131,13 +136,21 @@ export class DeveloperAuthController {
                     phone: phone ?? null,
                     authProvider: 'email',
                     isEmailVerified: false,
+                    emailVerificationToken: verificationToken,
+                    emailVerificationExpiry: verificationExpiry,
                 })
                 .returning();
 
             const token = generateToken({ id: newDev.id, email: newDev.email, role: 'developer' });
 
             // Fire-and-forget — never block registration on email delivery
-            notificationService.sendWelcomeEmail(newDev.email, newDev.name);
+            notificationService.sendWelcomeEmail(newDev.email, newDev.name, env.DEVELOPER_PORTAL_URL);
+            notificationService.sendEmailVerification(
+                newDev.email,
+                newDev.name,
+                verificationToken,
+                env.DEVELOPER_PORTAL_URL
+            );
 
             const data: AuthResponseData<DeveloperAuthProfile> = {
                 token,
@@ -482,6 +495,120 @@ export class DeveloperAuthController {
         } catch (error) {
             console.error('[DeveloperAuth] resetPassword error:', error);
             return c.json({ success: false, error: 'Failed to reset password' }, 500);
+        }
+    }
+
+    // ── Verify Email ──────────────────────────────────────────────────────────
+
+    async verifyEmail(c: Context) {
+        const body = await c.req.json().catch(() => null);
+        const parsed = VerifyEmailSchema.safeParse(body);
+        if (!parsed.success) {
+            return c.json({ success: false, error: parsed.error.issues[0].message }, 400);
+        }
+
+        const { token } = parsed.data;
+        try {
+            const [user] = await db
+                .select({
+                    id: developers.id,
+                    isEmailVerified: developers.isEmailVerified,
+                    emailVerificationToken: developers.emailVerificationToken,
+                    emailVerificationExpiry: developers.emailVerificationExpiry,
+                })
+                .from(developers)
+                .where(eq(developers.emailVerificationToken, token))
+                .limit(1);
+
+            if (!user) {
+                return c.json({ success: false, error: 'Invalid or expired verification link' }, 400);
+            }
+
+            if (user.isEmailVerified) {
+                await db
+                    .update(developers)
+                    .set({
+                        emailVerificationToken: null,
+                        emailVerificationExpiry: null,
+                    })
+                    .where(eq(developers.id, user.id));
+                return c.json({ success: true, message: 'Email is already verified' });
+            }
+
+            if (!user.emailVerificationExpiry || user.emailVerificationExpiry < new Date()) {
+                return c.json(
+                    {
+                        success: false,
+                        error: 'This verification link has expired. Sign in and request a new one.',
+                        code: 'TOKEN_EXPIRED',
+                    },
+                    400
+                );
+            }
+
+            await db
+                .update(developers)
+                .set({
+                    isEmailVerified: true,
+                    emailVerificationToken: null,
+                    emailVerificationExpiry: null,
+                    updatedAt: new Date(),
+                })
+                .where(eq(developers.id, user.id));
+
+            return c.json({ success: true, message: 'Email verified successfully' });
+        } catch (error) {
+            console.error('[DeveloperAuth] verifyEmail error:', error);
+            return c.json({ success: false, error: 'Failed to verify email' }, 500);
+        }
+    }
+
+    async resendVerification(c: Context) {
+        const jwtUser = c.get('user') as { id: number; role: string } | undefined;
+        if (!jwtUser || jwtUser.role !== 'developer') {
+            return c.json({ success: false, error: 'Unauthorized' }, 401);
+        }
+
+        try {
+            const [user] = await db.select().from(developers).where(eq(developers.id, jwtUser.id)).limit(1);
+            if (!user) return c.json({ success: false, error: 'User not found' }, 404);
+
+            if (user.isEmailVerified) {
+                return c.json({ success: true, message: 'Email is already verified' });
+            }
+
+            if (user.authProvider && user.authProvider !== 'email') {
+                if (!user.isEmailVerified) {
+                    await db
+                        .update(developers)
+                        .set({ isEmailVerified: true, updatedAt: new Date() })
+                        .where(eq(developers.id, user.id));
+                }
+                return c.json({ success: true, message: 'Email is already verified via social sign-in' });
+            }
+
+            const verificationToken = generateResetToken();
+            const verificationExpiry = new Date(Date.now() + EMAIL_VERIFY_TTL_MS);
+            await db
+                .update(developers)
+                .set({
+                    emailVerificationToken: verificationToken,
+                    emailVerificationExpiry: verificationExpiry,
+                    updatedAt: new Date(),
+                })
+                .where(eq(developers.id, user.id));
+
+            notificationService.sendEmailVerification(
+                user.email,
+                user.name,
+                verificationToken,
+                env.DEVELOPER_PORTAL_URL
+            );
+
+            return c.json({ success: true, message: 'Verification email sent' });
+        } catch (error) {
+            console.error('[DeveloperAuth] resendVerification error:', error);
+            return c.json({ success: false, error: 'Failed to send verification email' }, 500);
         }
     }
 

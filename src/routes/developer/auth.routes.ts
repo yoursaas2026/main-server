@@ -13,6 +13,12 @@ developerAuthRoutes.post('/login', (c) => developerAuthController.login(c));
 developerAuthRoutes.post('/forgot-password', (c) => developerAuthController.forgotPassword(c));
 developerAuthRoutes.post('/reset-password', (c) => developerAuthController.resetPassword(c));
 
+// ── Email verification ────────────────────────────────────────────────────────
+developerAuthRoutes.post('/verify-email', (c) => developerAuthController.verifyEmail(c));
+developerAuthRoutes.post('/resend-verification', authMiddleware, (c) =>
+    developerAuthController.resendVerification(c)
+);
+
 // ── Google OAuth ──────────────────────────────────────────────────────────────
 developerAuthRoutes.get('/google', (c) => developerAuthController.googleAuth(c));
 developerAuthRoutes.get('/google/callback', (c) => developerAuthController.googleCallback(c));

@@ -197,7 +197,7 @@ Public pricing preview: `GET /api/public/products/by-id/:id/contract-pricing`
 | `CONTRACT_PLATFORM_COMMISSION_PERCENT` | `20` | Platform % of **escrow** on success |
 | `CONTRACT_CLIENT_DECISION_DAYS` | `14` | Days after submit before auto-complete |
 | `CONTRACT_AUTO_COMPLETE_INTERVAL_MS` | `300000` | Background job interval (5 min) |
-| `CONTRACT_AUTO_SETTLEMENT_ENABLED` | `false` | Cashfree refunds + Cashfree Payouts after settlement |
+| `CONTRACT_AUTO_SETTLEMENT_ENABLED` | `true` | Cashfree refunds + Cashfree Payouts after settlement (retries via job + admin) |
 | `CASHFREE_PG_*` | — | Payment Gateway (Checkout + webhooks) |
 | `CASHFREE_PAYOUT_*` | — | Payouts + bank beneficiary verification |
 
@@ -207,11 +207,13 @@ See `.env.example` for full list.
 
 ## Production checklist
 
-1. Set `CONTRACT_AUTO_SETTLEMENT_ENABLED=true` when live Cashfree PG + Payouts keys are ready.
-2. Configure Cashfree webhook → `PAYMENT_SUCCESS_WEBHOOK` (and monitor refund/payout events).
-3. Developers must complete **payout bank verification** before payouts succeed.
-4. Ensure CORS includes client, developer, and admin portal origins.
-5. GetStream: buyer–seller DM must exist for contract bot messages.
+1. Keep `CONTRACT_AUTO_SETTLEMENT_ENABLED=true` when live Cashfree PG + Payouts keys are ready (default in `.env.example`).
+2. Configure Cashfree **Payment Gateway** webhook → `PAYMENT_SUCCESS_WEBHOOK` (escrow / amendments / plans).
+3. Configure Cashfree **Payouts** webhook → `POST /api/developer/payout/webhook/cashfree` (updates settlement status on transfer SUCCESS/FAILED).
+4. Developers must complete **payout bank verification** before payouts succeed.
+5. Ops: Admin → **Settlements** (`/dashboard/settlements`) lists failed/partial/skipped/pending and can **Retry settlement**. Background job also retries automatically (same interval as auto-complete).
+6. Ensure CORS includes client, developer, and admin portal origins.
+7. GetStream: buyer–seller DM must exist for contract bot messages.
 
 ---
 

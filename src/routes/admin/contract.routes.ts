@@ -8,6 +8,8 @@ const adminContractRoutes = new Hono<BlankEnv, BlankSchema, '/api/admin/contract
 adminContractRoutes.use('/*', authMiddleware);
 adminContractRoutes.get('/disputes', (c) => adminContractController.listDisputes(c));
 adminContractRoutes.post('/disputes/:disputeId/resolve', (c) => adminContractController.resolveDispute(c));
+adminContractRoutes.get('/settlements/issues', (c) => adminContractController.listSettlementIssues(c));
+adminContractRoutes.post('/:contractId/retry-settlement', (c) => adminContractController.retrySettlement(c));
 adminContractRoutes.get('/', (c) => adminContractController.listContracts(c));
 
 export default adminContractRoutes;

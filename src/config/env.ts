@@ -94,7 +94,7 @@ export const env = {
     ),
     /** Days client has to accept / dispute after developer submits (auto-complete if silent). */
     CONTRACT_CLIENT_DECISION_DAYS: parseInt(process.env.CONTRACT_CLIENT_DECISION_DAYS || '14', 10),
-    /** When true, attempt Cashfree refunds + payouts after contract settlement (requires keys + validated developer bank). */
+    /** When true, after completion/dispute: Cashfree refunds + Payouts (retries via job + admin Settlements). */
     CONTRACT_AUTO_SETTLEMENT_ENABLED: process.env.CONTRACT_AUTO_SETTLEMENT_ENABLED === 'true',
     /** Background job interval for auto-completing submitted contracts past client deadline (ms). */
     CONTRACT_AUTO_COMPLETE_INTERVAL_MS: Math.max(

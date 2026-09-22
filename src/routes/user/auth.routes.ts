@@ -13,6 +13,12 @@ userAuthRoutes.post('/login', (c) => userAuthController.login(c));
 userAuthRoutes.post('/forgot-password', (c) => userAuthController.forgotPassword(c));
 userAuthRoutes.post('/reset-password', (c) => userAuthController.resetPassword(c));
 
+// ── Email verification ────────────────────────────────────────────────────────
+userAuthRoutes.post('/verify-email', (c) => userAuthController.verifyEmail(c));
+userAuthRoutes.post('/resend-verification', authMiddleware, (c) =>
+    userAuthController.resendVerification(c)
+);
+
 // ── Google OAuth ──────────────────────────────────────────────────────────────
 userAuthRoutes.get('/google', (c) => userAuthController.googleAuth(c));
 userAuthRoutes.get('/google/callback', (c) => userAuthController.googleCallback(c));

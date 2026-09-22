@@ -12,11 +12,14 @@ import {
     LoginSchema,
     ForgotPasswordSchema,
     ResetPasswordSchema,
+    VerifyEmailSchema,
     type ClientAuthProfile,
     type ClientPublicProfile,
     type AuthResponseData,
 } from '../../types/auth.types.js';
 import { buildClientOnboardingStatus } from '../../utils/client-onboarding.js';
+
+const EMAIL_VERIFY_TTL_MS = 48 * 60 * 60 * 1000;
 
 // ─── Helper: pick only safe fields to send back to clients ────────────────────
 
@@ -85,6 +88,8 @@ export class UserAuthController {
             }
 
             const hashedPassword = await hashPassword(password);
+            const verificationToken = generateResetToken();
+            const verificationExpiry = new Date(Date.now() + EMAIL_VERIFY_TTL_MS);
 
             const [newClient] = await db
                 .insert(clients)
@@ -95,6 +100,8 @@ export class UserAuthController {
                     phone: phone ?? null,
                     authProvider: 'email',
                     isEmailVerified: false,
+                    emailVerificationToken: verificationToken,
+                    emailVerificationExpiry: verificationExpiry,
                 })
                 .returning();
 
@@ -102,6 +109,12 @@ export class UserAuthController {
 
             // Fire-and-forget — never block registration on email delivery
             notificationService.sendWelcomeEmail(newClient.email, newClient.name, env.USER_PORTAL_URL);
+            notificationService.sendEmailVerification(
+                newClient.email,
+                newClient.name,
+                verificationToken,
+                env.USER_PORTAL_URL
+            );
 
             const data: AuthResponseData<ClientAuthProfile> = {
                 token,
@@ -431,6 +444,121 @@ export class UserAuthController {
         } catch (error) {
             console.error('[UserAuth] resetPassword error:', error);
             return c.json({ success: false, error: 'Failed to reset password' }, 500);
+        }
+    }
+
+    // ── Verify Email ──────────────────────────────────────────────────────────
+
+    async verifyEmail(c: Context) {
+        const body = await c.req.json().catch(() => null);
+        const parsed = VerifyEmailSchema.safeParse(body);
+        if (!parsed.success) {
+            return c.json({ success: false, error: parsed.error.issues[0].message }, 400);
+        }
+
+        const { token } = parsed.data;
+        try {
+            const [user] = await db
+                .select({
+                    id: clients.id,
+                    isEmailVerified: clients.isEmailVerified,
+                    emailVerificationToken: clients.emailVerificationToken,
+                    emailVerificationExpiry: clients.emailVerificationExpiry,
+                })
+                .from(clients)
+                .where(eq(clients.emailVerificationToken, token))
+                .limit(1);
+
+            if (!user) {
+                return c.json({ success: false, error: 'Invalid or expired verification link' }, 400);
+            }
+
+            if (user.isEmailVerified) {
+                await db
+                    .update(clients)
+                    .set({
+                        emailVerificationToken: null,
+                        emailVerificationExpiry: null,
+                    })
+                    .where(eq(clients.id, user.id));
+                return c.json({ success: true, message: 'Email is already verified' });
+            }
+
+            if (!user.emailVerificationExpiry || user.emailVerificationExpiry < new Date()) {
+                return c.json(
+                    {
+                        success: false,
+                        error: 'This verification link has expired. Sign in and request a new one.',
+                        code: 'TOKEN_EXPIRED',
+                    },
+                    400
+                );
+            }
+
+            await db
+                .update(clients)
+                .set({
+                    isEmailVerified: true,
+                    emailVerificationToken: null,
+                    emailVerificationExpiry: null,
+                    updatedAt: new Date(),
+                })
+                .where(eq(clients.id, user.id));
+
+            return c.json({ success: true, message: 'Email verified successfully' });
+        } catch (error) {
+            console.error('[UserAuth] verifyEmail error:', error);
+            return c.json({ success: false, error: 'Failed to verify email' }, 500);
+        }
+    }
+
+    async resendVerification(c: Context) {
+        const jwtUser = c.get('user') as { id: number; role: string } | undefined;
+        if (!jwtUser || jwtUser.role !== 'client') {
+            return c.json({ success: false, error: 'Unauthorized' }, 401);
+        }
+
+        try {
+            const [user] = await db.select().from(clients).where(eq(clients.id, jwtUser.id)).limit(1);
+            if (!user) return c.json({ success: false, error: 'User not found' }, 404);
+
+            if (user.isEmailVerified) {
+                return c.json({ success: true, message: 'Email is already verified' });
+            }
+
+            if (user.authProvider && user.authProvider !== 'email') {
+                // OAuth accounts are typically verified by provider; mark verified if needed
+                if (!user.isEmailVerified) {
+                    await db
+                        .update(clients)
+                        .set({ isEmailVerified: true, updatedAt: new Date() })
+                        .where(eq(clients.id, user.id));
+                }
+                return c.json({ success: true, message: 'Email is already verified via social sign-in' });
+            }
+
+            const verificationToken = generateResetToken();
+            const verificationExpiry = new Date(Date.now() + EMAIL_VERIFY_TTL_MS);
+            await db
+                .update(clients)
+                .set({
+                    emailVerificationToken: verificationToken,
+                    emailVerificationExpiry: verificationExpiry,
+                    updatedAt: new Date(),
+                })
+                .where(eq(clients.id, user.id));
+
+            notificationService.sendEmailVerification(
+                user.email,
+                user.name,
+                verificationToken,
+                env.USER_PORTAL_URL
+            );
+
+            return c.json({ success: true, message: 'Verification email sent' });
+        } catch (error) {
+            console.error('[UserAuth] resendVerification error:', error);
+            return c.json({ success: false, error: 'Failed to send verification email' }, 500);
         }
     }
 

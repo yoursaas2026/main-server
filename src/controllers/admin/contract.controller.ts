@@ -1,9 +1,11 @@
 import type { Context } from 'hono';
 import { z } from 'zod';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import { contractService } from '../../services/contract.service.js';
+import { contractSettlementService } from '../../services/contract-settlement.service.js';
 import { contracts } from '../../db/schema.js';
 import { db } from '../../db/index.js';
-import { desc, eq } from 'drizzle-orm';
+import { env } from '../../config/env.js';
 
 function assertAdmin(c: Context) {
     const jwtUser = c.get('user') as { id: number; role: string } | undefined;
@@ -56,10 +58,64 @@ export class AdminContractController {
         const admin = assertAdmin(c);
         if (!admin) return c.json({ success: false, error: 'Unauthorized' }, 401);
         const status = c.req.query('status');
-        const rows = status
-            ? await db.select().from(contracts).where(eq(contracts.status, status)).orderBy(desc(contracts.createdAt)).limit(200)
-            : await db.select().from(contracts).orderBy(desc(contracts.createdAt)).limit(200);
-        return c.json({ success: true, data: rows });
+        const settlement = c.req.query('settlementStatus');
+        let rows;
+        if (settlement) {
+            rows = await db
+                .select()
+                .from(contracts)
+                .where(eq(contracts.settlementStatus, settlement))
+                .orderBy(desc(contracts.createdAt))
+                .limit(200);
+        } else if (status) {
+            rows = await db
+                .select()
+                .from(contracts)
+                .where(eq(contracts.status, status))
+                .orderBy(desc(contracts.createdAt))
+                .limit(200);
+        } else {
+            rows = await db.select().from(contracts).orderBy(desc(contracts.createdAt)).limit(200);
+        }
+        return c.json({
+            success: true,
+            data: rows,
+            meta: { autoSettlementEnabled: env.CONTRACT_AUTO_SETTLEMENT_ENABLED },
+        });
+    }
+
+    async listSettlementIssues(c: Context) {
+        const admin = assertAdmin(c);
+        if (!admin) return c.json({ success: false, error: 'Unauthorized' }, 401);
+        const rows = await db
+            .select()
+            .from(contracts)
+            .where(
+                and(
+                    eq(contracts.status, 'completed'),
+                    inArray(contracts.settlementStatus, ['failed', 'partial', 'skipped', 'pending'])
+                )
+            )
+            .orderBy(desc(contracts.completedAt))
+            .limit(100);
+        return c.json({
+            success: true,
+            data: rows,
+            meta: { autoSettlementEnabled: env.CONTRACT_AUTO_SETTLEMENT_ENABLED },
+        });
+    }
+
+    async retrySettlement(c: Context) {
+        const admin = assertAdmin(c);
+        if (!admin) return c.json({ success: false, error: 'Unauthorized' }, 401);
+        const contractId = parseInt(c.req.param('contractId') || '', 10);
+        if (!Number.isInteger(contractId)) return c.json({ success: false, error: 'Invalid contract' }, 400);
+        try {
+            const result = await contractSettlementService.retrySettlement(contractId);
+            return c.json({ success: true, data: result });
+        } catch (e) {
+            return c.json({ success: false, error: e instanceof Error ? e.message : 'Retry failed' }, 400);
+        }
     }
 }
 

@@ -38,8 +38,13 @@ class NotificationService {
     /**
      * Sends an email verification email without blocking the calling request.
      */
-    sendEmailVerification(email: string, name: string, verificationToken: string): void {
-        emailService.sendEmailVerification(email, name, verificationToken).catch((err) => {
+    sendEmailVerification(
+        email: string,
+        name: string,
+        verificationToken: string,
+        appUrl?: string,
+    ): void {
+        emailService.sendEmailVerification(email, name, verificationToken, appUrl).catch((err) => {
             console.error(
                 '[NotificationService] Failed to send email-verification to %s:',
                 email,

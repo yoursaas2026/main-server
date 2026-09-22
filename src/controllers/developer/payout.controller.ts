@@ -8,6 +8,7 @@ import {
     verifyPayoutWebhookV1,
     verifyPayoutWebhookV2,
 } from '../../services/cashfree-payout.service.js';
+import { contractSettlementService } from '../../services/contract-settlement.service.js';
 import { env } from '../../config/env.js';
 
 const IFSC_RE = /^[A-Z]{4}0[A-Z0-9]{6}$/;
@@ -371,11 +372,14 @@ export class DeveloperPayoutController {
         const headerSig = c.req.header('x-webhook-signature');
         const timestamp = c.req.header('x-webhook-timestamp');
 
+        let verifiedPayload: unknown = null;
         try {
             if (headerSig && timestamp) {
-                verifyPayoutWebhookV2(headerSig, bodyString, timestamp);
+                const v2 = verifyPayoutWebhookV2(headerSig, bodyString, timestamp);
+                verifiedPayload = v2.object ?? JSON.parse(bodyString);
             } else {
-                verifyPayoutWebhookV1(bodyString, secret);
+                const v1 = verifyPayoutWebhookV1(bodyString, secret);
+                verifiedPayload = v1.object;
             }
         } catch (err) {
             const msg = err instanceof Error ? err.message : 'Verification failed';
@@ -388,6 +392,15 @@ export class DeveloperPayoutController {
                 },
                 401
             );
+        }
+
+        try {
+            const result = await contractSettlementService.applyPayoutWebhook(verifiedPayload);
+            if (result.matched) {
+                console.log(`[DeveloperPayout] webhook updated settlement for contract ${result.contractId}`);
+            }
+        } catch (e) {
+            console.error('[DeveloperPayout] webhook settlement apply failed:', e);
         }
 
         return c.json({ status: 'ok' });

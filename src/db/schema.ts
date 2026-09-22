@@ -18,6 +18,10 @@ export const developers = pgTable('developers', {
     resetPasswordToken: text('reset_password_token'),
     resetPasswordExpiry: timestamp('reset_password_expiry'),
 
+    // Email verification (email/password sign-up)
+    emailVerificationToken: text('email_verification_token'),
+    emailVerificationExpiry: timestamp('email_verification_expiry'),
+
     // Profile Information
     profilePicture: text('profile_picture'),
     coverPicture: text('cover_picture'),
@@ -124,6 +128,10 @@ export const clients = pgTable('clients', {
     // Password Reset
     resetPasswordToken: text('reset_password_token'),
     resetPasswordExpiry: timestamp('reset_password_expiry'),
+
+    // Email verification (email/password sign-up)
+    emailVerificationToken: text('email_verification_token'),
+    emailVerificationExpiry: timestamp('email_verification_expiry'),
 
     // Profile Information
     profilePicture: text('profile_picture'),
@@ -314,6 +322,22 @@ export const clientListingEvents = pgTable('client_listing_events', {
     /** JSON blob — extra context (compared ids, tags, etc.) */
     meta: text('meta'),
     createdAt: timestamp('created_at').defaultNow(),
+});
+
+/** Version history for a marketplace listing (seller Releases UI). */
+export const productReleases = pgTable('product_releases', {
+    id: serial('id').primaryKey(),
+    productId: integer('product_id')
+        .references(() => developerProducts.id)
+        .notNull(),
+    version: varchar('version', { length: 40 }).notNull(),
+    title: varchar('title', { length: 160 }),
+    changelog: text('changelog'),
+    releaseNotesUrl: text('release_notes_url'),
+    isCurrent: boolean('is_current').default(false).notNull(),
+    releasedAt: timestamp('released_at').defaultNow(),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
 });
 
 export const productCategories = pgTable('product_categories', {

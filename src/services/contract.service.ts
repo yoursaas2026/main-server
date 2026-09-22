@@ -84,10 +84,15 @@ export function buildContractSettlementPreview(contract: {
     nonRefundableFeePaise: number;
     developerReleasedPaise: number | null;
     platformReleasedPaise: number | null;
+    settlementStatus?: string | null;
+    settlementMetaJson?: string | null;
 }) {
     const platformPct = env.CONTRACT_PLATFORM_COMMISSION_PERCENT;
     const split = escrowCompletionSplit(contract.escrowAmountPaise, platformPct);
     const completed = contract.status === ContractStatus.COMPLETED;
+    const settlementMeta = contractSettlementService.getSettlementMeta({
+        settlementMetaJson: contract.settlementMetaJson ?? null,
+    });
     return {
         platformCommissionPercent: platformPct,
         developerEscrowSplitPercent: 100 - platformPct,
@@ -99,10 +104,31 @@ export function buildContractSettlementPreview(contract: {
         estimatedPlatformFromEscrowPaise: split.platformFromEscrowPaise,
         recordedDeveloperReleasedPaise: completed ? contract.developerReleasedPaise : null,
         recordedPlatformReleasedPaise: completed ? contract.platformReleasedPaise : null,
+        settlementStatus: completed ? contract.settlementStatus ?? null : null,
+        settlementPayoutStatus: settlementMeta?.payout?.status ?? null,
+        settlementRefundCount: settlementMeta?.refunds?.length ?? 0,
+        settlementErrors: settlementMeta?.errors ?? [],
         note: completed
-            ? 'Ledger totals reflect how this contract was settled. Estimated split is what the current escrow balance would pay on a standard completion.'
+            ? settlementStatusNote(contract.settlementStatus, settlementMeta?.errors)
             : 'Assumes successful completion without dispute. The processing fee is non-refundable and is not part of the escrow split.',
     };
+}
+
+function settlementStatusNote(status: string | null | undefined, errors?: string[]): string {
+    switch (status) {
+        case 'executed':
+            return 'Cashfree settlement finished: developer payout initiated and any client refunds processed.';
+        case 'pending':
+            return 'Cashfree payout submitted and awaiting bank confirmation.';
+        case 'partial':
+            return `Settlement partially completed.${errors?.length ? ` Issues: ${errors.slice(0, 2).join(' · ')}` : ''} Ops can retry.`;
+        case 'failed':
+            return `Cashfree settlement failed.${errors?.length ? ` ${errors[0]}` : ''} Ensure seller bank is verified, then retry.`;
+        case 'skipped':
+            return 'Ledger updated only — automatic Cashfree refunds/payouts were disabled for this run.';
+        default:
+            return 'Ledger totals reflect how this contract was settled. Estimated split is what the current escrow balance would pay on a standard completion.';
+    }
 }
 
 type TierRow = { id?: string; fixedPriceInr?: number | null };
