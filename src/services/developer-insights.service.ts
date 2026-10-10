@@ -5,8 +5,10 @@ import {
     clients,
     contracts,
     developerProducts,
+    developers,
     productReleases,
 } from '../db/schema.js';
+import { env } from '../config/env.js';
 import { ContractStatus } from './contract.service.js';
 
 function startOfUtcDay(d: Date): Date {
@@ -484,5 +486,152 @@ export const developerInsightsService = {
         if (!existing) throw new Error('Release not found');
         await db.delete(productReleases).where(eq(productReleases.id, releaseId));
         return { deleted: true, wasCurrent: existing.isCurrent };
+    },
+
+    /** Real escrow earnings + payout bank snapshot for the Earnings page. */
+    async getEarnings(developerId: number) {
+        const [dev] = await db
+            .select({
+                payoutBankName: developers.payoutBankName,
+                payoutAccountHolderName: developers.payoutAccountHolderName,
+                payoutAccountNumber: developers.payoutAccountNumber,
+                payoutBankValidationStatus: developers.payoutBankValidationStatus,
+                payoutBankValidationAccountStatus: developers.payoutBankValidationAccountStatus,
+                payoutCashfreeBeneficiaryId: developers.payoutCashfreeBeneficiaryId,
+            })
+            .from(developers)
+            .where(eq(developers.id, developerId))
+            .limit(1);
+
+        if (!dev) throw new Error('Developer not found');
+
+        const rows = await db
+            .select({
+                id: contracts.id,
+                publicId: contracts.publicId,
+                status: contracts.status,
+                productId: contracts.productId,
+                productName: developerProducts.name,
+                grossAmountPaise: contracts.grossAmountPaise,
+                escrowAmountPaise: contracts.escrowAmountPaise,
+                developerReleasedPaise: contracts.developerReleasedPaise,
+                platformReleasedPaise: contracts.platformReleasedPaise,
+                settlementStatus: contracts.settlementStatus,
+                completedAt: contracts.completedAt,
+                createdAt: contracts.createdAt,
+                clientName: clients.name,
+            })
+            .from(contracts)
+            .leftJoin(developerProducts, eq(contracts.productId, developerProducts.id))
+            .leftJoin(clients, eq(contracts.clientId, clients.id))
+            .where(eq(contracts.developerId, developerId))
+            .orderBy(desc(contracts.createdAt))
+            .limit(200);
+
+        const platformPct = env.CONTRACT_PLATFORM_COMMISSION_PERCENT;
+        const developerPct = Math.max(0, 100 - platformPct);
+
+        const estimateDeveloperShare = (escrowPaise: number) =>
+            Math.floor((escrowPaise * developerPct) / 100);
+
+        const inFlightStatuses = new Set<string>([
+            ContractStatus.ACTIVE,
+            ContractStatus.SUBMITTED,
+            ContractStatus.AWAITING_CLIENT_PAYMENT,
+            ContractStatus.AWAITING_AMENDMENT_PAYMENT,
+            ContractStatus.PENDING_DEVELOPER_ACCEPTANCE,
+            ContractStatus.DISPUTED,
+        ]);
+
+        let lifetimePaidPaise = 0;
+        let inEscrowPaise = 0;
+        let pendingSettlementPaise = 0;
+
+        const payoutHistory: {
+            contractId: number;
+            publicId: string;
+            productName: string | null;
+            clientName: string | null;
+            amountPaise: number;
+            settlementStatus: string | null;
+            completedAt: string | null;
+        }[] = [];
+
+        const openContracts: {
+            contractId: number;
+            publicId: string;
+            productName: string | null;
+            status: string;
+            estimatedDeveloperPaise: number;
+            escrowAmountPaise: number;
+        }[] = [];
+
+        for (const row of rows) {
+            const released = row.developerReleasedPaise;
+            if (typeof released === 'number' && released > 0) {
+                lifetimePaidPaise += released;
+                payoutHistory.push({
+                    contractId: row.id,
+                    publicId: row.publicId,
+                    productName: row.productName,
+                    clientName: row.clientName,
+                    amountPaise: released,
+                    settlementStatus: row.settlementStatus,
+                    completedAt: row.completedAt ? new Date(row.completedAt).toISOString() : null,
+                });
+            }
+
+            if (inFlightStatuses.has(row.status)) {
+                const est = estimateDeveloperShare(row.escrowAmountPaise);
+                inEscrowPaise += est;
+                openContracts.push({
+                    contractId: row.id,
+                    publicId: row.publicId,
+                    productName: row.productName,
+                    status: row.status,
+                    estimatedDeveloperPaise: est,
+                    escrowAmountPaise: row.escrowAmountPaise,
+                });
+            }
+
+            if (
+                row.status === ContractStatus.COMPLETED &&
+                (!released || released <= 0) &&
+                row.settlementStatus &&
+                ['pending', 'failed', 'partial', 'skipped'].includes(row.settlementStatus)
+            ) {
+                pendingSettlementPaise += estimateDeveloperShare(row.escrowAmountPaise);
+            }
+        }
+
+        const acct = (dev.payoutAccountNumber || '').replace(/\s+/g, '');
+        const last4 = acct.length >= 4 ? acct.slice(-4) : null;
+        const bankReady =
+            (dev.payoutBankValidationStatus || '').toLowerCase() === 'completed' &&
+            (dev.payoutBankValidationAccountStatus || '').toLowerCase() === 'valid';
+
+        return {
+            currency: 'INR',
+            totals: {
+                lifetimePaidPaise,
+                inEscrowEstimatedPaise: inEscrowPaise,
+                pendingSettlementPaise,
+                completedPayoutCount: payoutHistory.length,
+                openContractCount: openContracts.length,
+            },
+            payoutMethod: {
+                configured: Boolean(acct || dev.payoutBankName),
+                bankReady,
+                bankName: dev.payoutBankName,
+                accountHolderName: dev.payoutAccountHolderName,
+                accountLast4: last4,
+                hasCashfreeBeneficiary: Boolean(dev.payoutCashfreeBeneficiaryId),
+                validationStatus: dev.payoutBankValidationStatus,
+            },
+            note: 'Payouts run automatically via Cashfree when a contract completes (and after dispute resolution). There is no manual “request payout” — ensure your bank is verified.',
+            developerEscrowSplitPercent: developerPct,
+            payoutHistory: payoutHistory.slice(0, 50),
+            openContracts: openContracts.slice(0, 50),
+        };
     },
 };

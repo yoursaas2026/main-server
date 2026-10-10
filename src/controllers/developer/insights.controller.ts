@@ -47,6 +47,17 @@ export class DeveloperInsightsController {
         }
     }
 
+    async earnings(c: Context) {
+        const user = assertDeveloper(c);
+        if (!user) return c.json({ success: false, error: 'Unauthorized' }, 401);
+        try {
+            const data = await developerInsightsService.getEarnings(user.id);
+            return c.json({ success: true, data });
+        } catch (e) {
+            return c.json({ success: false, error: e instanceof Error ? e.message : 'Failed' }, 400);
+        }
+    }
+
     async productAnalytics(c: Context) {
         const user = assertDeveloper(c);
         if (!user) return c.json({ success: false, error: 'Unauthorized' }, 401);

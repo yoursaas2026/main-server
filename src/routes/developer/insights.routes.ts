@@ -8,5 +8,6 @@ const developerInsightsRoutes = new Hono<BlankEnv, BlankSchema, '/api/developer/
 developerInsightsRoutes.use('/*', authMiddleware);
 developerInsightsRoutes.get('/', (c) => developerInsightsController.accountInsights(c));
 developerInsightsRoutes.get('/customers', (c) => developerInsightsController.accountCustomers(c));
+developerInsightsRoutes.get('/earnings', (c) => developerInsightsController.earnings(c));
 
 export default developerInsightsRoutes;
