@@ -58,6 +58,33 @@ export class AdminGlassBreakerController {
         }
     }
 
+    async searchTargets(c: Context) {
+        if (!assertAdmin(c)) return c.json({ success: false, error: 'Unauthorized' }, 401);
+
+        const targetType = (c.req.query('targetType') || '').trim();
+        const q = (c.req.query('q') || '').trim();
+        const limit = parseInt(c.req.query('limit') || '12', 10);
+
+        if (!(targetTypes as readonly string[]).includes(targetType)) {
+            return c.json({ success: false, error: 'Invalid targetType' }, 400);
+        }
+        if (q.length < 1) {
+            return c.json({ success: true, data: { results: [] } });
+        }
+
+        try {
+            const results = await glassBreakerService.searchTargets(
+                targetType as GlassBreakerTargetType,
+                q,
+                Number.isFinite(limit) ? limit : 12,
+            );
+            return c.json({ success: true, data: { results } });
+        } catch (error) {
+            console.error('[GlassBreaker] searchTargets error:', error);
+            return c.json({ success: false, error: 'Failed to search targets' }, 500);
+        }
+    }
+
     async execute(c: Context) {
         const admin = assertAdmin(c);
         if (!admin) return c.json({ success: false, error: 'Unauthorized' }, 401);

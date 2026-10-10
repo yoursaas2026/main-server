@@ -9,6 +9,7 @@ adminGlassBreakerRoutes.use('*', authMiddleware);
 
 adminGlassBreakerRoutes.get('/actions', (c) => adminGlassBreakerController.listActions(c));
 adminGlassBreakerRoutes.get('/events', (c) => adminGlassBreakerController.listEvents(c));
+adminGlassBreakerRoutes.get('/targets', (c) => adminGlassBreakerController.searchTargets(c));
 adminGlassBreakerRoutes.post('/execute', (c) => adminGlassBreakerController.execute(c));
 
 export default adminGlassBreakerRoutes;

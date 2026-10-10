@@ -1,4 +1,4 @@
-import { and, count, desc, eq, ne } from 'drizzle-orm';
+import { and, count, desc, eq, ilike, ne, or, type SQL } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import {
     admins,
@@ -12,6 +12,13 @@ import {
 import { env } from '../config/env.js';
 import { contractSettlementService } from './contract-settlement.service.js';
 import { notificationService } from './notification.service.js';
+
+export type GlassBreakerTargetHit = {
+    id: number;
+    label: string;
+    subtitle: string;
+    meta: string | null;
+};
 
 export const GLASS_BREAKER_CONFIRM_PHRASE = 'BREAK GLASS';
 
@@ -287,6 +294,203 @@ class GlassBreakerService {
             limit,
             offset,
         };
+    }
+
+    /**
+     * Autocomplete search for glass-breaker targets by name / email / slug / publicId / etc.
+     * Also matches numeric id when the query is digits-only.
+     */
+    async searchTargets(
+        targetType: GlassBreakerTargetType,
+        qRaw: string,
+        limitRaw = 12,
+    ): Promise<GlassBreakerTargetHit[]> {
+        const q = qRaw.trim();
+        if (q.length < 1) return [];
+
+        const limit = Math.min(Math.max(limitRaw, 1), 25);
+        const pattern = `%${q.replace(/[%_]/g, '')}%`;
+        const idExact = /^\d+$/.test(q) ? Number.parseInt(q, 10) : null;
+
+        switch (targetType) {
+            case 'developer': {
+                const filters: SQL[] = [
+                    ilike(developers.name, pattern),
+                    ilike(developers.email, pattern),
+                    ilike(developers.company, pattern),
+                    ilike(developers.phone, pattern),
+                    ilike(developers.fullLegalName, pattern),
+                    ilike(developers.headline, pattern),
+                ];
+                if (idExact != null) filters.push(eq(developers.id, idExact));
+                const rows = await db
+                    .select({
+                        id: developers.id,
+                        name: developers.name,
+                        email: developers.email,
+                        status: developers.status,
+                        kycStatus: developers.kycStatus,
+                        company: developers.company,
+                        phone: developers.phone,
+                    })
+                    .from(developers)
+                    .where(or(...filters))
+                    .orderBy(desc(developers.id))
+                    .limit(limit);
+                return rows.map((r) => ({
+                    id: r.id,
+                    label: r.name || r.email,
+                    subtitle: [r.email, r.company].filter(Boolean).join(' · '),
+                    meta: `status=${r.status || '—'} · kyc=${r.kycStatus || '—'}`,
+                }));
+            }
+            case 'client': {
+                const filters: SQL[] = [
+                    ilike(clients.name, pattern),
+                    ilike(clients.email, pattern),
+                    ilike(clients.companyName, pattern),
+                    ilike(clients.phone, pattern),
+                ];
+                if (idExact != null) filters.push(eq(clients.id, idExact));
+                const rows = await db
+                    .select({
+                        id: clients.id,
+                        name: clients.name,
+                        email: clients.email,
+                        status: clients.status,
+                        companyName: clients.companyName,
+                        phone: clients.phone,
+                    })
+                    .from(clients)
+                    .where(or(...filters))
+                    .orderBy(desc(clients.id))
+                    .limit(limit);
+                return rows.map((r) => ({
+                    id: r.id,
+                    label: r.name || r.email,
+                    subtitle: [r.email, r.companyName].filter(Boolean).join(' · '),
+                    meta: `status=${r.status || '—'}`,
+                }));
+            }
+            case 'product': {
+                const filters: SQL[] = [
+                    ilike(developerProducts.name, pattern),
+                    ilike(developerProducts.slug, pattern),
+                    ilike(developerProducts.projectId, pattern),
+                    ilike(developers.name, pattern),
+                    ilike(developers.email, pattern),
+                ];
+                if (idExact != null) filters.push(eq(developerProducts.id, idExact));
+                const rows = await db
+                    .select({
+                        id: developerProducts.id,
+                        name: developerProducts.name,
+                        slug: developerProducts.slug,
+                        projectId: developerProducts.projectId,
+                        listingStatus: developerProducts.listingStatus,
+                        developerName: developers.name,
+                        developerEmail: developers.email,
+                    })
+                    .from(developerProducts)
+                    .innerJoin(developers, eq(developerProducts.developerId, developers.id))
+                    .where(or(...filters))
+                    .orderBy(desc(developerProducts.id))
+                    .limit(limit);
+                return rows.map((r) => ({
+                    id: r.id,
+                    label: r.name,
+                    subtitle: `${r.slug} · seller ${r.developerName || r.developerEmail}`,
+                    meta: `listing=${r.listingStatus || '—'}`,
+                }));
+            }
+            case 'contract': {
+                const filters: SQL[] = [
+                    ilike(contracts.publicId, pattern),
+                    ilike(contracts.status, pattern),
+                    ilike(clients.name, pattern),
+                    ilike(clients.email, pattern),
+                    ilike(developers.name, pattern),
+                    ilike(developers.email, pattern),
+                    ilike(developerProducts.name, pattern),
+                    ilike(developerProducts.slug, pattern),
+                ];
+                if (idExact != null) filters.push(eq(contracts.id, idExact));
+                const rows = await db
+                    .select({
+                        id: contracts.id,
+                        publicId: contracts.publicId,
+                        status: contracts.status,
+                        settlementStatus: contracts.settlementStatus,
+                        clientName: clients.name,
+                        clientEmail: clients.email,
+                        developerName: developers.name,
+                        developerEmail: developers.email,
+                        productName: developerProducts.name,
+                    })
+                    .from(contracts)
+                    .innerJoin(clients, eq(contracts.clientId, clients.id))
+                    .innerJoin(developers, eq(contracts.developerId, developers.id))
+                    .innerJoin(developerProducts, eq(contracts.productId, developerProducts.id))
+                    .where(or(...filters))
+                    .orderBy(desc(contracts.id))
+                    .limit(limit);
+                return rows.map((r) => ({
+                    id: r.id,
+                    label: r.publicId,
+                    subtitle: `${r.productName} · ${r.clientName || r.clientEmail} ↔ ${r.developerName || r.developerEmail}`,
+                    meta: `status=${r.status}${r.settlementStatus ? ` · settlement=${r.settlementStatus}` : ''}`,
+                }));
+            }
+            case 'marketing_user': {
+                const filters: SQL[] = [
+                    ilike(marketingUsers.name, pattern),
+                    ilike(marketingUsers.email, pattern),
+                    ilike(marketingUsers.mailboxEmail, pattern),
+                ];
+                if (idExact != null) filters.push(eq(marketingUsers.id, idExact));
+                const rows = await db
+                    .select({
+                        id: marketingUsers.id,
+                        name: marketingUsers.name,
+                        email: marketingUsers.email,
+                        mailboxEmail: marketingUsers.mailboxEmail,
+                        status: marketingUsers.status,
+                    })
+                    .from(marketingUsers)
+                    .where(or(...filters))
+                    .orderBy(desc(marketingUsers.id))
+                    .limit(limit);
+                return rows.map((r) => ({
+                    id: r.id,
+                    label: r.name || r.email,
+                    subtitle: [r.email, r.mailboxEmail].filter(Boolean).join(' · '),
+                    meta: `status=${r.status || '—'}`,
+                }));
+            }
+            case 'admin': {
+                const filters: SQL[] = [ilike(admins.name, pattern), ilike(admins.email, pattern)];
+                if (idExact != null) filters.push(eq(admins.id, idExact));
+                const rows = await db
+                    .select({
+                        id: admins.id,
+                        name: admins.name,
+                        email: admins.email,
+                        status: admins.status,
+                    })
+                    .from(admins)
+                    .where(or(...filters))
+                    .orderBy(desc(admins.id))
+                    .limit(limit);
+                return rows.map((r) => ({
+                    id: r.id,
+                    label: r.name || r.email,
+                    subtitle: r.email,
+                    meta: `status=${r.status || '—'}`,
+                }));
+            }
+            default:
+                return [];
+        }
     }
 
     async execute(input: GlassBreakerExecuteInput) {
