@@ -28,6 +28,7 @@ import userProfileRoutes from './routes/user/profile.routes.js';
 import developerContractRoutes from './routes/developer/contract.routes.js';
 import adminContractRoutes from './routes/admin/contract.routes.js';
 import adminMarketingRoutes from './routes/admin/marketing.routes.js';
+import adminGlassBreakerRoutes from './routes/admin/glass-breaker.routes.js';
 import {
     marketingAuthRoutes,
     marketingListsRoutes,
@@ -114,6 +115,7 @@ app.route('/api/user/contracts', userContractRoutes);
 app.route('/api/developer/contracts', developerContractRoutes);
 app.route('/api/admin/contracts', adminContractRoutes);
 app.route('/api/admin/marketing', adminMarketingRoutes);
+app.route('/api/admin/glass-breaker', adminGlassBreakerRoutes);
 app.route('/api/marketing/auth', marketingAuthRoutes);
 app.route('/api/marketing/lists', marketingListsRoutes);
 app.route('/api/marketing/templates', marketingTemplatesRoutes);

@@ -536,3 +536,19 @@ export const marketingCampaignSends = pgTable('marketing_campaign_sends', {
     sentAt: timestamp('sent_at'),
     createdAt: timestamp('created_at').defaultNow(),
 });
+
+/** Audited emergency override (glass breaker) actions by platform admins. */
+export const glassBreakerEvents = pgTable('glass_breaker_events', {
+    id: serial('id').primaryKey(),
+    adminId: integer('admin_id')
+        .references(() => admins.id)
+        .notNull(),
+    action: varchar('action', { length: 64 }).notNull(),
+    targetType: varchar('target_type', { length: 40 }).notNull(),
+    targetId: integer('target_id').notNull(),
+    reason: text('reason').notNull(),
+    beforeJson: text('before_json'),
+    afterJson: text('after_json'),
+    metaJson: text('meta_json'),
+    createdAt: timestamp('created_at').defaultNow(),
+});
