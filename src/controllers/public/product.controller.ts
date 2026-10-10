@@ -51,6 +51,10 @@ export class PublicProductController {
         const search = c.req.query('search') || '';
         const categoryIdRaw = c.req.query('categoryId');
         const categoryId = categoryIdRaw ? parseInt(categoryIdRaw, 10) : undefined;
+        const minPriceRaw = parseFloat(c.req.query('minPriceInr') || '');
+        const maxPriceRaw = parseFloat(c.req.query('maxPriceInr') || '');
+        const minRatingRaw = parseFloat(c.req.query('minRating') || '');
+        const stack = (c.req.query('stack') || '').trim();
         const sortRaw = (c.req.query('sort') || 'recommended').toLowerCase();
         const sort =
             sortRaw === 'newest' || sortRaw === 'name' || sortRaw === 'recommended'
@@ -65,6 +69,10 @@ export class PublicProductController {
                 offset,
                 search,
                 categoryId: Number.isInteger(categoryId) && categoryId! > 0 ? categoryId : undefined,
+                minPriceInr: Number.isFinite(minPriceRaw) && minPriceRaw > 0 ? minPriceRaw : undefined,
+                maxPriceInr: Number.isFinite(maxPriceRaw) && maxPriceRaw > 0 ? maxPriceRaw : undefined,
+                minRating: Number.isFinite(minRatingRaw) && minRatingRaw > 0 ? minRatingRaw : undefined,
+                stack: stack || undefined,
                 clientId,
                 sort: clientId ? sort : sort === 'recommended' ? 'newest' : sort,
             });

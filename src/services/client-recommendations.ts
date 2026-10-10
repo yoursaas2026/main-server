@@ -205,6 +205,17 @@ function scoreRow(
     };
 }
 
+export type MarketplaceListFilters = {
+    /** Inclusive INR floor on listing min tier price (excludes custom-quote / null). */
+    minPriceInr?: number;
+    /** Inclusive INR ceiling on listing min tier price (excludes custom-quote / null). */
+    maxPriceInr?: number;
+    /** Minimum average review rating (1–5). Listings with no reviews are excluded. */
+    minRating?: number;
+    /** Case-insensitive substring match on `technicalStack`. */
+    stack?: string;
+};
+
 export async function listLiveMarketplaceProducts(options: {
     limit?: number;
     offset?: number;
@@ -212,11 +223,24 @@ export async function listLiveMarketplaceProducts(options: {
     categoryId?: number;
     clientId?: number | null;
     sort?: 'recommended' | 'newest' | 'name';
-}): Promise<MarketplaceListResult> {
+} & MarketplaceListFilters): Promise<MarketplaceListResult> {
     const limit = Math.min(Math.max(options.limit ?? 24, 1), 100);
     const offset = Math.max(options.offset ?? 0, 0);
     const searchRaw = (options.search || '').trim();
     const search = searchRaw.toLowerCase();
+    const stackNeedle = (options.stack || '').trim().toLowerCase();
+    const minPrice =
+        typeof options.minPriceInr === 'number' && Number.isFinite(options.minPriceInr) && options.minPriceInr > 0
+            ? options.minPriceInr
+            : undefined;
+    const maxPrice =
+        typeof options.maxPriceInr === 'number' && Number.isFinite(options.maxPriceInr) && options.maxPriceInr > 0
+            ? options.maxPriceInr
+            : undefined;
+    const minRating =
+        typeof options.minRating === 'number' && Number.isFinite(options.minRating) && options.minRating > 0
+            ? Math.min(5, options.minRating)
+            : undefined;
 
     let buyer: BuyerScoreContext | null = null;
     let client: typeof clients.$inferSelect | null = null;
@@ -277,6 +301,10 @@ export async function listLiveMarketplaceProducts(options: {
         rows = rows.filter((r) => r.product.productCategoryId === options.categoryId);
     }
 
+    if (stackNeedle) {
+        rows = rows.filter((r) => (r.product.technicalStack || '').toLowerCase().includes(stackNeedle));
+    }
+
     if (candidateIdSet) {
         rows = rows.filter((r) => candidateIdSet!.has(r.product.id));
         // Preserve ANN order as a soft preference before scoring
@@ -289,6 +317,7 @@ export async function listLiveMarketplaceProducts(options: {
                 r.product.tagline,
                 r.product.slug,
                 r.categoryName,
+                r.product.technicalStack,
                 ...parseJson<string[]>(r.product.audienceTags, []),
             ]
                 .filter(Boolean)
@@ -303,6 +332,22 @@ export async function listLiveMarketplaceProducts(options: {
     let items: MarketplaceListItem[] = rows.map((row) =>
         scoreRow(row, reviewStats.get(row.product.id), buyer, semanticScores.get(row.product.id))
     );
+
+    if (minPrice != null || maxPrice != null) {
+        items = items.filter((p) => {
+            if (p.minPriceInr == null || p.minPriceInr <= 0) return false;
+            if (minPrice != null && p.minPriceInr < minPrice) return false;
+            if (maxPrice != null && p.minPriceInr > maxPrice) return false;
+            return true;
+        });
+    }
+
+    if (minRating != null) {
+        items = items.filter((p) => {
+            const avg = reviewStats.get(p.id)?.avg;
+            return avg != null && avg >= minRating;
+        });
+    }
 
     const total = items.length;
 
