@@ -81,6 +81,14 @@ export const env = {
     /** GetStream Chat (https://getstream.io/chat/) — server issues user tokens; secret never goes to browsers */
     STREAM_API_KEY: process.env.STREAM_API_KEY || '',
     STREAM_API_SECRET: process.env.STREAM_API_SECRET || '',
+    /**
+     * Seconds before Stream fires `user.unread_message_reminder` (60–86400). Default 5 minutes.
+     * YourSaaS emails the recipient via Mailu when that webhook arrives.
+     */
+    STREAM_UNREAD_REMINDER_SECONDS: Math.min(
+        86_400,
+        Math.max(60, parseInt(process.env.STREAM_UNREAD_REMINDER_SECONDS || '300', 10)),
+    ),
     /** Public origin for this API (used to build absolute avatar URLs for Stream user profiles) */
     API_PUBLIC_ORIGIN: (process.env.API_PUBLIC_ORIGIN || `http://localhost:${process.env.PORT || '3000'}`).replace(/\/$/, ''),
 

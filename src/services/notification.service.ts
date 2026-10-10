@@ -69,6 +69,23 @@ class NotificationService {
             );
         });
     }
+
+    sendUnreadMessageEmail(input: {
+        email: string;
+        name: string;
+        fromName: string;
+        preview: string;
+        inboxUrl: string;
+        role: 'buyer' | 'seller';
+    }): void {
+        emailService.sendUnreadMessageEmail(input).catch((err) => {
+            console.error(
+                '[NotificationService] Failed to send unread-message email to %s:',
+                input.email,
+                err,
+            );
+        });
+    }
 }
 
 export const notificationService = new NotificationService();

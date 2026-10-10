@@ -421,6 +421,61 @@ class MailuEmailService {
         });
     }
 
+    /**
+     * Unread DM nudge — used when Stream reports the recipient still has unread messages
+     * after STREAM_UNREAD_REMINDER_SECONDS (default 5 minutes).
+     */
+    async sendUnreadMessageEmail(input: {
+        email: string;
+        name: string;
+        fromName: string;
+        preview: string;
+        inboxUrl: string;
+        role: 'buyer' | 'seller';
+    }): Promise<boolean> {
+        const safeName = escapeHtml(input.name || 'there');
+        const safeFrom = escapeHtml(input.fromName || 'Someone');
+        const safePreview = escapeHtml(input.preview || 'You have a new message on YourSaaS.');
+        const inboxUrl = input.inboxUrl;
+        const roleLabel = input.role === 'seller' ? 'seller inbox' : 'messages';
+
+        const htmlContent = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+                    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                    .header { background: #6200EE; color: white; padding: 28px; text-align: center; border-radius: 8px 8px 0 0; }
+                    .content { background: #f9f9f9; padding: 28px; border-radius: 0 0 8px 8px; }
+                    .preview { background: #fff; border-left: 4px solid #6200EE; padding: 12px 14px; margin: 16px 0; color: #202124; }
+                    .button { display: inline-block; padding: 12px 28px; background: #6200EE; color: white; text-decoration: none; border-radius: 5px; margin-top: 8px; }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header">
+                        <h1>Unread message on YourSaaS</h1>
+                    </div>
+                    <div class="content">
+                        <h2>Hi ${safeName},</h2>
+                        <p><strong>${safeFrom}</strong> sent you a message. Open your ${roleLabel} to reply.</p>
+                        <div class="preview">${safePreview}</div>
+                        <a href="${inboxUrl}" class="button">Open ${roleLabel}</a>
+                    </div>
+                </div>
+            </body>
+            </html>
+        `;
+
+        return await this.sendEmail({
+            to: input.email,
+            subject: `New message from ${input.fromName || 'YourSaaS'}`,
+            htmlContent,
+            textContent: `Hi ${input.name}, ${input.fromName} messaged you on YourSaaS:\n\n${input.preview}\n\nOpen ${inboxUrl}`,
+        });
+    }
+
     async sendCampaignEmail(input: {
         to: string;
         subject: string;

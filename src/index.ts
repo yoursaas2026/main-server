@@ -42,6 +42,8 @@ import {
 import { startContractJobs } from './jobs/contract-jobs.js';
 import { startMarketingJobs } from './jobs/marketing-jobs.js';
 import { startSubscriptionJobs } from './jobs/subscription-jobs.js';
+import streamWebhookRoutes from './routes/webhooks/stream.routes.js';
+import { ensureStreamUnreadReminders } from './services/stream-chat.service.js';
 
 const app = new Hono();
 
@@ -129,6 +131,7 @@ app.route('/api/marketing/auth', marketingAuthRoutes);
 app.route('/api/marketing/lists', marketingListsRoutes);
 app.route('/api/marketing/templates', marketingTemplatesRoutes);
 app.route('/api/marketing/campaigns', marketingCampaignsRoutes);
+app.route('/api/webhooks/stream', streamWebhookRoutes);
 
 // 404 handler
 app.notFound((c) => {
@@ -172,5 +175,6 @@ serve({
 startContractJobs();
 startSubscriptionJobs();
 startMarketingJobs();
+void ensureStreamUnreadReminders();
 
 export default app;

@@ -43,3 +43,50 @@ export function absoluteMediaUrl(path: string | null | undefined): string | unde
     const withSlash = normalized.startsWith('/') ? normalized : `/${normalized}`;
     return `${base}${withSlash}`;
 }
+
+export type ParsedStreamParty =
+    | { role: 'client'; id: number }
+    | { role: 'developer'; id: number };
+
+/** Parse `client_12` / `dev_5` Stream user ids. */
+export function parseStreamUserId(streamUserId: string | undefined | null): ParsedStreamParty | null {
+    if (!streamUserId) return null;
+    const client = /^client_(\d+)$/.exec(streamUserId);
+    if (client) return { role: 'client', id: parseInt(client[1], 10) };
+    const dev = /^dev_(\d+)$/.exec(streamUserId);
+    if (dev) return { role: 'developer', id: parseInt(dev[1], 10) };
+    return null;
+}
+
+/**
+ * Enable Stream unread reminders (default 5 min) and point webhooks at our API.
+ * Safe to call on every boot — idempotent settings updates.
+ */
+export async function ensureStreamUnreadReminders(): Promise<void> {
+    if (!isStreamChatConfigured()) return;
+
+    const client = getStreamServerClient();
+    const webhookUrl = `${env.API_PUBLIC_ORIGIN}/api/webhooks/stream`;
+
+    try {
+        await client.updateChannelType('messaging', {
+            reminders: true,
+            read_events: true,
+        });
+    } catch (err) {
+        console.error('[Stream] Failed to enable messaging reminders:', err);
+    }
+
+    try {
+        await client.updateAppSettings({
+            reminders_interval: env.STREAM_UNREAD_REMINDER_SECONDS,
+            webhook_url: webhookUrl,
+            webhook_events: ['user.unread_message_reminder'],
+        });
+        console.log(
+            `[Stream] Unread reminders → ${env.STREAM_UNREAD_REMINDER_SECONDS}s, webhook ${webhookUrl}`,
+        );
+    } catch (err) {
+        console.error('[Stream] Failed to configure unread reminder webhook:', err);
+    }
+}
