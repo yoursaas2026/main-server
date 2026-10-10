@@ -743,6 +743,36 @@ export const contractService = {
         return db.select().from(contractEvents).where(eq(contractEvents.contractId, contractId)).orderBy(desc(contractEvents.createdAt));
     },
 
+    async listAmendments(contractId: number) {
+        return db
+            .select()
+            .from(contractAmendments)
+            .where(eq(contractAmendments.contractId, contractId))
+            .orderBy(desc(contractAmendments.createdAt));
+    },
+
+    /** Latest dispute row for a contract (open or resolved) for party-facing detail UIs. */
+    async getLatestDispute(contractId: number) {
+        const [row] = await db
+            .select({
+                id: contractDisputes.id,
+                reason: contractDisputes.reason,
+                status: contractDisputes.status,
+                openedByClient: contractDisputes.openedByClient,
+                adminResolution: contractDisputes.adminResolution,
+                refundClientPaise: contractDisputes.refundClientPaise,
+                releaseDeveloperPaise: contractDisputes.releaseDeveloperPaise,
+                retainPlatformPaise: contractDisputes.retainPlatformPaise,
+                createdAt: contractDisputes.createdAt,
+                resolvedAt: contractDisputes.resolvedAt,
+            })
+            .from(contractDisputes)
+            .where(eq(contractDisputes.contractId, contractId))
+            .orderBy(desc(contractDisputes.createdAt))
+            .limit(1);
+        return row ?? null;
+    },
+
     async listDisputesForAdmin() {
         return db
             .select()
@@ -807,9 +837,5 @@ export const contractService = {
             releaseDeveloperPaise: input.releaseDeveloperPaise,
             reason: 'dispute_resolution',
         });
-    },
-
-    async listAmendments(contractId: number) {
-        return db.select().from(contractAmendments).where(eq(contractAmendments.contractId, contractId)).orderBy(desc(contractAmendments.createdAt));
     },
 };

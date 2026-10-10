@@ -75,12 +75,15 @@ export class DeveloperContractController {
             };
         }
 
+        const dispute = await contractService.getLatestDispute(row.id);
+
         return c.json({
             success: true,
             data: {
                 contract: fresh,
                 events,
                 amendments,
+                dispute,
                 settlementPreview: buildContractSettlementPreview(fresh),
                 buyerContext,
             },

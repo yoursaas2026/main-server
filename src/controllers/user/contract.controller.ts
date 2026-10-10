@@ -64,12 +64,14 @@ export class UserContractController {
         const fresh = await contractService.getByPublicId(publicId);
         const events = await contractService.listEvents(row.id);
         const amendments = await contractService.listAmendments(row.id);
+        const dispute = await contractService.getLatestDispute(row.id);
         return c.json({
             success: true,
             data: {
                 contract: fresh,
                 events,
                 amendments,
+                dispute,
                 settlementPreview: buildContractSettlementPreview(fresh),
             },
         });
