@@ -488,6 +488,213 @@ export const developerInsightsService = {
         return { deleted: true, wasCurrent: existing.isCurrent };
     },
 
+    /**
+     * Derived activity feed for the Notifications page (no separate inbox table yet).
+     * Built from contracts, listings, KYC/bank, and email verification state.
+     */
+    async getActivityFeed(developerId: number) {
+        const [dev] = await db
+            .select({
+                name: developers.name,
+                email: developers.email,
+                isEmailVerified: developers.isEmailVerified,
+                kycStatus: developers.kycStatus,
+                kycVerifiedAt: developers.kycVerifiedAt,
+                kycRejectedAt: developers.kycRejectedAt,
+                payoutBankValidationStatus: developers.payoutBankValidationStatus,
+                payoutBankValidationAccountStatus: developers.payoutBankValidationAccountStatus,
+                payoutBankValidationAt: developers.payoutBankValidationAt,
+                createdAt: developers.createdAt,
+            })
+            .from(developers)
+            .where(eq(developers.id, developerId))
+            .limit(1);
+
+        if (!dev) throw new Error('Developer not found');
+
+        type ActivityItem = {
+            id: string;
+            type: 'contract' | 'listing' | 'kyc' | 'payout' | 'account' | 'settlement';
+            severity: 'info' | 'success' | 'warning' | 'action';
+            title: string;
+            message: string;
+            href: string | null;
+            createdAt: string;
+        };
+
+        const items: ActivityItem[] = [];
+        const push = (item: ActivityItem) => items.push(item);
+
+        if (!dev.isEmailVerified) {
+            push({
+                id: 'email-unverified',
+                type: 'account',
+                severity: 'warning',
+                title: 'Verify your email',
+                message: `Confirm ${dev.email} to secure your seller account.`,
+                href: '/verify-email',
+                createdAt: (dev.createdAt ?? new Date()).toISOString(),
+            });
+        }
+
+        const kyc = (dev.kycStatus || 'pending').toLowerCase();
+        if (kyc === 'rejected') {
+            push({
+                id: 'kyc-rejected',
+                type: 'kyc',
+                severity: 'warning',
+                title: 'KYC rejected',
+                message: 'Update your documents and resubmit KYC to unlock payouts and listing.',
+                href: '/dashboard/kyc',
+                createdAt: (dev.kycRejectedAt ?? new Date()).toISOString(),
+            });
+        } else if (kyc === 'submitted' || kyc === 'pending') {
+            push({
+                id: `kyc-${kyc}`,
+                type: 'kyc',
+                severity: kyc === 'submitted' ? 'info' : 'action',
+                title: kyc === 'submitted' ? 'KYC under review' : 'Complete KYC',
+                message:
+                    kyc === 'submitted'
+                        ? 'We are reviewing your documents. You will be able to list once verified.'
+                        : 'Submit KYC to unlock marketplace listing and payouts.',
+                href: '/dashboard/kyc',
+                createdAt: (dev.createdAt ?? new Date()).toISOString(),
+            });
+        }
+
+        const bankOk =
+            (dev.payoutBankValidationStatus || '').toLowerCase() === 'completed' &&
+            (dev.payoutBankValidationAccountStatus || '').toLowerCase() === 'valid';
+        if (!bankOk) {
+            push({
+                id: 'bank-incomplete',
+                type: 'payout',
+                severity: 'action',
+                title: 'Add payout bank',
+                message: 'Verify a bank account so Cashfree can settle completed contracts.',
+                href: '/dashboard/payout-bank',
+                createdAt: (dev.payoutBankValidationAt ?? dev.createdAt ?? new Date()).toISOString(),
+            });
+        }
+
+        const productRows = await db
+            .select({
+                id: developerProducts.id,
+                name: developerProducts.name,
+                slug: developerProducts.slug,
+                listingStatus: developerProducts.listingStatus,
+                updatedAt: developerProducts.updatedAt,
+                createdAt: developerProducts.createdAt,
+                projectId: developerProducts.projectId,
+            })
+            .from(developerProducts)
+            .where(eq(developerProducts.developerId, developerId))
+            .orderBy(desc(developerProducts.updatedAt))
+            .limit(40);
+
+        for (const p of productRows) {
+            const live = (p.listingStatus || '').toLowerCase() === 'live';
+            if (!live) continue;
+            push({
+                id: `listing-${p.id}`,
+                type: 'listing',
+                severity: 'success',
+                title: 'Listing is live',
+                message: `"${p.name}" is visible on the marketplace.`,
+                href: p.projectId ? `/project/${p.projectId}/listing` : '/dashboard/products',
+                createdAt: (p.updatedAt ?? p.createdAt ?? new Date()).toISOString(),
+            });
+        }
+
+        const contractRows = await db
+            .select({
+                id: contracts.id,
+                publicId: contracts.publicId,
+                status: contracts.status,
+                settlementStatus: contracts.settlementStatus,
+                productName: developerProducts.name,
+                updatedAt: contracts.updatedAt,
+                completedAt: contracts.completedAt,
+                createdAt: contracts.createdAt,
+            })
+            .from(contracts)
+            .leftJoin(developerProducts, eq(contracts.productId, developerProducts.id))
+            .where(eq(contracts.developerId, developerId))
+            .orderBy(desc(contracts.updatedAt))
+            .limit(60);
+
+        for (const c of contractRows) {
+            const href = `/dashboard/contracts/${c.publicId}`;
+            const when = (c.updatedAt ?? c.completedAt ?? c.createdAt ?? new Date()).toISOString();
+            const label = c.productName || 'Contract';
+
+            if (c.status === ContractStatus.PENDING_DEVELOPER_ACCEPTANCE) {
+                push({
+                    id: `contract-pending-${c.id}`,
+                    type: 'contract',
+                    severity: 'action',
+                    title: 'Contract awaiting your acceptance',
+                    message: `${label} · ${c.publicId}`,
+                    href,
+                    createdAt: when,
+                });
+            } else if (c.status === ContractStatus.DISPUTED) {
+                push({
+                    id: `contract-disputed-${c.id}`,
+                    type: 'contract',
+                    severity: 'warning',
+                    title: 'Contract in dispute',
+                    message: `${label} is disputed — wait for admin resolution.`,
+                    href,
+                    createdAt: when,
+                });
+            } else if (c.status === ContractStatus.SUBMITTED) {
+                push({
+                    id: `contract-submitted-${c.id}`,
+                    type: 'contract',
+                    severity: 'info',
+                    title: 'Delivery submitted',
+                    message: `${label} is awaiting the buyer decision.`,
+                    href,
+                    createdAt: when,
+                });
+            } else if (c.status === ContractStatus.COMPLETED) {
+                push({
+                    id: `contract-done-${c.id}`,
+                    type: 'contract',
+                    severity: 'success',
+                    title: 'Contract completed',
+                    message: `${label} finished. Settlement: ${c.settlementStatus || 'pending'}.`,
+                    href,
+                    createdAt: when,
+                });
+                if (
+                    c.settlementStatus &&
+                    ['failed', 'partial', 'pending', 'skipped'].includes(c.settlementStatus)
+                ) {
+                    push({
+                        id: `settlement-${c.id}`,
+                        type: 'settlement',
+                        severity: 'warning',
+                        title: 'Settlement needs attention',
+                        message: `${label} settlement is ${c.settlementStatus}. Check Earnings for details.`,
+                        href: '/dashboard/earnings',
+                        createdAt: when,
+                    });
+                }
+            }
+        }
+
+        items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+        return {
+            items: items.slice(0, 80),
+            generatedAt: new Date().toISOString(),
+            note: 'This feed is generated from your live account activity. A persistent notification inbox is not in v1.',
+        };
+    },
+
     /** Real escrow earnings + payout bank snapshot for the Earnings page. */
     async getEarnings(developerId: number) {
         const [dev] = await db
