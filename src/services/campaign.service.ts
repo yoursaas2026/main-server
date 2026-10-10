@@ -12,12 +12,50 @@ import { emailService } from './email.service.js';
 
 const SEND_BATCH_DELAY_MS = 120;
 
+/** In-process cancel flags for campaigns currently sending on this API instance. */
+const cancelRequested = new Set<number>();
+
 function sleep(ms: number) {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export class CampaignService {
+    requestCancel(campaignId: number): void {
+        cancelRequested.add(campaignId);
+    }
+
+    clearCancel(campaignId: number): void {
+        cancelRequested.delete(campaignId);
+    }
+
+    async cancelCampaign(campaignId: number): Promise<{ ok: boolean; error?: string }> {
+        const [campaign] = await db
+            .select({ id: marketingCampaigns.id, status: marketingCampaigns.status })
+            .from(marketingCampaigns)
+            .where(eq(marketingCampaigns.id, campaignId))
+            .limit(1);
+
+        if (!campaign) return { ok: false, error: 'Campaign not found' };
+        if (campaign.status !== 'sending') {
+            return { ok: false, error: 'Only campaigns that are currently sending can be cancelled' };
+        }
+
+        this.requestCancel(campaignId);
+        await db
+            .update(marketingCampaigns)
+            .set({
+                status: 'cancelled',
+                completedAt: new Date(),
+                updatedAt: new Date(),
+            })
+            .where(eq(marketingCampaigns.id, campaignId));
+
+        return { ok: true };
+    }
+
     async sendCampaign(campaignId: number): Promise<{ ok: boolean; error?: string }> {
+        this.clearCancel(campaignId);
+
         const [campaign] = await db
             .select()
             .from(marketingCampaigns)
@@ -27,6 +65,9 @@ export class CampaignService {
         if (!campaign) return { ok: false, error: 'Campaign not found' };
         if (campaign.status === 'sending') return { ok: false, error: 'Campaign is already sending' };
         if (campaign.status === 'sent') return { ok: false, error: 'Campaign was already sent' };
+        if (campaign.status === 'cancelled') {
+            return { ok: false, error: 'Cancelled campaigns cannot be resent — duplicate the draft' };
+        }
 
         const subscribers = await db
             .select()
@@ -47,6 +88,7 @@ export class CampaignService {
             .set({
                 status: 'sending',
                 startedAt: new Date(),
+                completedAt: null,
                 totalRecipients: subscribers.length,
                 sentCount: 0,
                 failedCount: 0,
@@ -56,9 +98,26 @@ export class CampaignService {
 
         let sentCount = 0;
         let failedCount = 0;
+        let cancelled = false;
 
         for (const sub of subscribers) {
-            const unsubscribeUrl = `${env.MARKETING_PORTAL_URL}/unsubscribe?token=${sub.unsubscribeToken}`;
+            if (cancelRequested.has(campaignId)) {
+                cancelled = true;
+                break;
+            }
+
+            // Re-check DB in case cancel was set from another request path
+            const [live] = await db
+                .select({ status: marketingCampaigns.status })
+                .from(marketingCampaigns)
+                .where(eq(marketingCampaigns.id, campaignId))
+                .limit(1);
+            if (live?.status === 'cancelled') {
+                cancelled = true;
+                break;
+            }
+
+            const unsubscribeUrl = `${env.MARKETING_PORTAL_URL.replace(/\/$/, '')}/unsubscribe?token=${sub.unsubscribeToken}`;
             const html = campaign.htmlContent
                 .replace(/\{\{firstName\}\}/g, sub.firstName)
                 .replace(/\{\{lastName\}\}/g, sub.lastName)
@@ -93,6 +152,42 @@ export class CampaignService {
             await sleep(SEND_BATCH_DELAY_MS);
         }
 
+        const cancelPending = cancelled || cancelRequested.has(campaignId);
+        this.clearCancel(campaignId);
+
+        if (cancelPending) {
+            await db
+                .update(marketingCampaigns)
+                .set({
+                    status: 'cancelled',
+                    completedAt: new Date(),
+                    sentCount,
+                    failedCount,
+                    updatedAt: new Date(),
+                })
+                .where(eq(marketingCampaigns.id, campaignId));
+            return { ok: true };
+        }
+
+        const [liveEnd] = await db
+            .select({ status: marketingCampaigns.status })
+            .from(marketingCampaigns)
+            .where(eq(marketingCampaigns.id, campaignId))
+            .limit(1);
+
+        if (liveEnd?.status === 'cancelled') {
+            await db
+                .update(marketingCampaigns)
+                .set({
+                    completedAt: new Date(),
+                    sentCount,
+                    failedCount,
+                    updatedAt: new Date(),
+                })
+                .where(eq(marketingCampaigns.id, campaignId));
+            return { ok: true };
+        }
+
         await db
             .update(marketingCampaigns)
             .set({
@@ -110,8 +205,9 @@ export class CampaignService {
     sendCampaignAsync(campaignId: number): void {
         this.sendCampaign(campaignId).catch((err) => {
             console.error('[CampaignService] send failed for campaign %s:', campaignId, err);
+            this.clearCancel(campaignId);
             db.update(marketingCampaigns)
-                .set({ status: 'failed', updatedAt: new Date() })
+                .set({ status: 'failed', updatedAt: new Date(), completedAt: new Date() })
                 .where(eq(marketingCampaigns.id, campaignId))
                 .catch(() => undefined);
         });

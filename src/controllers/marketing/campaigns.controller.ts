@@ -1,5 +1,5 @@
 import type { Context } from 'hono';
-import { desc, eq } from 'drizzle-orm';
+import { desc, eq, sql } from 'drizzle-orm';
 import { db } from '../../db/index.js';
 import {
     marketingCampaigns,
@@ -11,6 +11,14 @@ import { assertMarketing } from '../../utils/marketing-guard.js';
 import { campaignService, getMarketingDashboardStats } from '../../services/campaign.service.js';
 import { env } from '../../config/env.js';
 
+function parsePaging(c: Context, defaultLimit = 25) {
+    const limitRaw = parseInt(c.req.query('limit') || String(defaultLimit), 10);
+    const offsetRaw = parseInt(c.req.query('offset') || '0', 10);
+    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 100) : defaultLimit;
+    const offset = Number.isFinite(offsetRaw) ? Math.max(offsetRaw, 0) : 0;
+    return { limit, offset };
+}
+
 export class MarketingCampaignsController {
     async dashboard(c: Context) {
         if (!assertMarketing(c)) return c.json({ success: false, error: 'Unauthorized' }, 401);
@@ -20,6 +28,12 @@ export class MarketingCampaignsController {
 
     async list(c: Context) {
         if (!assertMarketing(c)) return c.json({ success: false, error: 'Unauthorized' }, 401);
+
+        const { limit, offset } = parsePaging(c);
+        const [totalRow] = await db
+            .select({ count: sql<number>`count(*)::int` })
+            .from(marketingCampaigns);
+        const total = totalRow?.count ?? 0;
 
         const campaigns = await db
             .select({
@@ -40,15 +54,22 @@ export class MarketingCampaignsController {
             })
             .from(marketingCampaigns)
             .leftJoin(marketingLists, eq(marketingCampaigns.listId, marketingLists.id))
-            .orderBy(desc(marketingCampaigns.createdAt));
+            .orderBy(desc(marketingCampaigns.createdAt))
+            .limit(limit)
+            .offset(offset);
 
-        return c.json({ success: true, data: { campaigns } });
+        return c.json({
+            success: true,
+            data: { campaigns, pagination: { limit, offset, total } },
+        });
     }
 
     async getOne(c: Context) {
         if (!assertMarketing(c)) return c.json({ success: false, error: 'Unauthorized' }, 401);
 
         const id = parseInt(c.req.param('id'), 10);
+        const { limit, offset } = parsePaging(c, 50);
+
         const [campaign] = await db
             .select()
             .from(marketingCampaigns)
@@ -57,14 +78,24 @@ export class MarketingCampaignsController {
 
         if (!campaign) return c.json({ success: false, error: 'Campaign not found' }, 404);
 
+        const [totalRow] = await db
+            .select({ count: sql<number>`count(*)::int` })
+            .from(marketingCampaignSends)
+            .where(eq(marketingCampaignSends.campaignId, id));
+        const total = totalRow?.count ?? 0;
+
         const sends = await db
             .select()
             .from(marketingCampaignSends)
             .where(eq(marketingCampaignSends.campaignId, id))
             .orderBy(desc(marketingCampaignSends.createdAt))
-            .limit(100);
+            .limit(limit)
+            .offset(offset);
 
-        return c.json({ success: true, data: { campaign, sends } });
+        return c.json({
+            success: true,
+            data: { campaign, sends, pagination: { limit, offset, total } },
+        });
     }
 
     async create(c: Context) {
@@ -130,18 +161,20 @@ export class MarketingCampaignsController {
         }
 
         const body = await c.req.json().catch(() => null);
+        const patch: Record<string, unknown> = { updatedAt: new Date() };
+        if (body?.name) patch.name = String(body.name).trim();
+        if (body?.subject) patch.subject = String(body.subject).trim();
+        if (body?.htmlContent) patch.htmlContent = String(body.htmlContent);
+        if (body?.textContent !== undefined) {
+            patch.textContent = body.textContent ? String(body.textContent) : null;
+        }
+        if (body?.listId) patch.listId = Number(body.listId);
+        if (body?.fromEmail) patch.fromEmail = String(body.fromEmail);
+        if (body?.fromName) patch.fromName = String(body.fromName);
+
         const [campaign] = await db
             .update(marketingCampaigns)
-            .set({
-                name: body?.name ? String(body.name).trim() : undefined,
-                subject: body?.subject ? String(body.subject).trim() : undefined,
-                htmlContent: body?.htmlContent ? String(body.htmlContent) : undefined,
-                textContent: body?.textContent !== undefined ? String(body.textContent) : undefined,
-                listId: body?.listId ? Number(body.listId) : undefined,
-                fromEmail: body?.fromEmail ? String(body.fromEmail) : undefined,
-                fromName: body?.fromName ? String(body.fromName) : undefined,
-                updatedAt: new Date(),
-            })
+            .set(patch)
             .where(eq(marketingCampaigns.id, id))
             .returning();
 
@@ -165,6 +198,21 @@ export class MarketingCampaignsController {
 
         campaignService.sendCampaignAsync(id);
         return c.json({ success: true, message: 'Campaign send started' });
+    }
+
+    async cancel(c: Context) {
+        if (!assertMarketing(c)) return c.json({ success: false, error: 'Unauthorized' }, 401);
+
+        const id = parseInt(c.req.param('id'), 10);
+        if (!Number.isFinite(id)) {
+            return c.json({ success: false, error: 'Invalid campaign id' }, 400);
+        }
+
+        const result = await campaignService.cancelCampaign(id);
+        if (!result.ok) {
+            return c.json({ success: false, error: result.error || 'Cancel failed' }, 400);
+        }
+        return c.json({ success: true, message: 'Campaign cancel requested' });
     }
 
     async remove(c: Context) {

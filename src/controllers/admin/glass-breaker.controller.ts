@@ -17,6 +17,7 @@ const targetTypes = [
     'product',
     'contract',
     'marketing_user',
+    'marketing_campaign',
     'admin',
 ] as const;
 

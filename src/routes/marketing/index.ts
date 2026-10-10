@@ -16,6 +16,7 @@ const marketingListsRoutes = new Hono<BlankEnv, BlankSchema>();
 marketingListsRoutes.use('*', authMiddleware);
 marketingListsRoutes.get('/', (c) => marketingListsController.list(c));
 marketingListsRoutes.post('/', (c) => marketingListsController.create(c));
+marketingListsRoutes.get('/:id', (c) => marketingListsController.getOne(c));
 marketingListsRoutes.put('/:id', (c) => marketingListsController.update(c));
 marketingListsRoutes.delete('/:id', (c) => marketingListsController.remove(c));
 marketingListsRoutes.get('/:id/subscribers', (c) => marketingListsController.listSubscribers(c));
@@ -38,6 +39,7 @@ marketingCampaignsRoutes.get('/:id', (c) => marketingCampaignsController.getOne(
 marketingCampaignsRoutes.post('/', (c) => marketingCampaignsController.create(c));
 marketingCampaignsRoutes.put('/:id', (c) => marketingCampaignsController.update(c));
 marketingCampaignsRoutes.post('/:id/send', (c) => marketingCampaignsController.send(c));
+marketingCampaignsRoutes.post('/:id/cancel', (c) => marketingCampaignsController.cancel(c));
 marketingCampaignsRoutes.delete('/:id', (c) => marketingCampaignsController.remove(c));
 
 export {

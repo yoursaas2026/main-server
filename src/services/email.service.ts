@@ -9,6 +9,7 @@ interface SendEmailParams {
     textContent?: string;
     fromEmail?: string;
     fromName?: string;
+    headers?: Record<string, string>;
 }
 
 class MailuEmailService {
@@ -58,6 +59,7 @@ class MailuEmailService {
         textContent,
         fromEmail,
         fromName,
+        headers,
         marketing = false,
     }: SendEmailParams & { marketing?: boolean }): Promise<boolean> {
         const transporter = marketing ? this.getMarketingTransporter() : this.getTransporter();
@@ -76,6 +78,7 @@ class MailuEmailService {
                 subject,
                 html: htmlContent,
                 text: textContent ?? subject,
+                headers: headers ?? undefined,
             });
             return true;
         } catch (error) {
@@ -440,6 +443,10 @@ class MailuEmailService {
             fromEmail: input.fromEmail,
             fromName: input.fromName,
             marketing: true,
+            headers: {
+                'List-Unsubscribe': `<${input.unsubscribeUrl}>`,
+                'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+            },
         });
     }
 }

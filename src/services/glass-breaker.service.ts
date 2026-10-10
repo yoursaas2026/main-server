@@ -7,9 +7,11 @@ import {
     developerProducts,
     developers,
     glassBreakerEvents,
+    marketingCampaigns,
     marketingUsers,
 } from '../db/schema.js';
 import { env } from '../config/env.js';
+import { campaignService } from './campaign.service.js';
 import { contractSettlementService } from './contract-settlement.service.js';
 import { notificationService } from './notification.service.js';
 
@@ -28,6 +30,7 @@ export type GlassBreakerTargetType =
     | 'product'
     | 'contract'
     | 'marketing_user'
+    | 'marketing_campaign'
     | 'admin';
 
 export type GlassBreakerActionCatalogItem = {
@@ -161,6 +164,12 @@ export const GLASS_BREAKER_ACTIONS: GlassBreakerActionCatalogItem[] = [
         payloadFields: [
             { key: 'status', type: 'string', required: true, options: ['active', 'inactive'] },
         ],
+    },
+    {
+        targetType: 'marketing_campaign',
+        action: 'cancel_send',
+        label: 'Cancel campaign send',
+        description: 'Kill-switch a marketing campaign that is currently sending.',
     },
     {
         targetType: 'admin',
@@ -467,6 +476,34 @@ class GlassBreakerService {
                     meta: `status=${r.status || '—'}`,
                 }));
             }
+            case 'marketing_campaign': {
+                const filters: SQL[] = [
+                    ilike(marketingCampaigns.name, pattern),
+                    ilike(marketingCampaigns.subject, pattern),
+                    ilike(marketingCampaigns.status, pattern),
+                    ilike(marketingCampaigns.fromEmail, pattern),
+                ];
+                if (idExact != null) filters.push(eq(marketingCampaigns.id, idExact));
+                const rows = await db
+                    .select({
+                        id: marketingCampaigns.id,
+                        name: marketingCampaigns.name,
+                        subject: marketingCampaigns.subject,
+                        status: marketingCampaigns.status,
+                        sentCount: marketingCampaigns.sentCount,
+                        totalRecipients: marketingCampaigns.totalRecipients,
+                    })
+                    .from(marketingCampaigns)
+                    .where(or(...filters))
+                    .orderBy(desc(marketingCampaigns.id))
+                    .limit(limit);
+                return rows.map((r) => ({
+                    id: r.id,
+                    label: r.name,
+                    subtitle: r.subject,
+                    meta: `status=${r.status || '—'} · ${r.sentCount ?? 0}/${r.totalRecipients ?? 0}`,
+                }));
+            }
             case 'admin': {
                 const filters: SQL[] = [ilike(admins.name, pattern), ilike(admins.email, pattern)];
                 if (idExact != null) filters.push(eq(admins.id, idExact));
@@ -542,6 +579,12 @@ class GlassBreakerService {
             }
             case 'marketing_user': {
                 const result = await this.executeMarketingUser(input.targetId, input.action, payload);
+                before = result.before;
+                after = result.after;
+                break;
+            }
+            case 'marketing_campaign': {
+                const result = await this.executeMarketingCampaign(input.targetId, input.action);
                 before = result.before;
                 after = result.after;
                 break;
@@ -818,6 +861,42 @@ class GlassBreakerService {
             .returning();
 
         return { before, after: { id: updated.id, email: updated.email, status: updated.status } };
+    }
+
+    private async executeMarketingCampaign(targetId: number, action: string) {
+        const [row] = await db
+            .select({
+                id: marketingCampaigns.id,
+                name: marketingCampaigns.name,
+                status: marketingCampaigns.status,
+                sentCount: marketingCampaigns.sentCount,
+                failedCount: marketingCampaigns.failedCount,
+                totalRecipients: marketingCampaigns.totalRecipients,
+            })
+            .from(marketingCampaigns)
+            .where(eq(marketingCampaigns.id, targetId))
+            .limit(1);
+        if (!row) throw new Error('Marketing campaign not found');
+        const before = row;
+
+        if (action !== 'cancel_send') throw new Error('Unsupported marketing_campaign action');
+        const result = await campaignService.cancelCampaign(targetId);
+        if (!result.ok) throw new Error(result.error || 'Cancel failed');
+
+        const [updated] = await db
+            .select({
+                id: marketingCampaigns.id,
+                name: marketingCampaigns.name,
+                status: marketingCampaigns.status,
+                sentCount: marketingCampaigns.sentCount,
+                failedCount: marketingCampaigns.failedCount,
+                totalRecipients: marketingCampaigns.totalRecipients,
+            })
+            .from(marketingCampaigns)
+            .where(eq(marketingCampaigns.id, targetId))
+            .limit(1);
+
+        return { before, after: updated ?? { ...before, status: 'cancelled' } };
     }
 
     private async executeAdmin(

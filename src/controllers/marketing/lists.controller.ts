@@ -1,12 +1,20 @@
 import type { Context } from 'hono';
 import { randomBytes } from 'crypto';
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, ilike, isNull, or, sql } from 'drizzle-orm';
 import { db } from '../../db/index.js';
 import { marketingLists, marketingSubscribers } from '../../db/schema.js';
 import { assertMarketing } from '../../utils/marketing-guard.js';
 
 function unsubscribeToken() {
     return randomBytes(32).toString('hex');
+}
+
+function parsePaging(c: Context, defaultLimit = 25) {
+    const limitRaw = parseInt(c.req.query('limit') || String(defaultLimit), 10);
+    const offsetRaw = parseInt(c.req.query('offset') || '0', 10);
+    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 100) : defaultLimit;
+    const offset = Number.isFinite(offsetRaw) ? Math.max(offsetRaw, 0) : 0;
+    return { limit, offset };
 }
 
 export class MarketingListsController {
@@ -29,6 +37,30 @@ export class MarketingListsController {
             .orderBy(desc(marketingLists.createdAt));
 
         return c.json({ success: true, data: { lists } });
+    }
+
+    async getOne(c: Context) {
+        if (!assertMarketing(c)) return c.json({ success: false, error: 'Unauthorized' }, 401);
+
+        const id = parseInt(c.req.param('id'), 10);
+        const [list] = await db
+            .select({
+                id: marketingLists.id,
+                name: marketingLists.name,
+                description: marketingLists.description,
+                isDefault: marketingLists.isDefault,
+                createdAt: marketingLists.createdAt,
+                subscriberCount: sql<number>`(
+                    SELECT count(*)::int FROM marketing_subscribers ms
+                    WHERE ms.list_id = ${marketingLists.id} AND ms.unsubscribed_at IS NULL
+                )`,
+            })
+            .from(marketingLists)
+            .where(eq(marketingLists.id, id))
+            .limit(1);
+
+        if (!list) return c.json({ success: false, error: 'List not found' }, 404);
+        return c.json({ success: true, data: { list } });
     }
 
     async create(c: Context) {
@@ -89,13 +121,56 @@ export class MarketingListsController {
         if (!assertMarketing(c)) return c.json({ success: false, error: 'Unauthorized' }, 401);
 
         const listId = parseInt(c.req.param('id'), 10);
+        const { limit, offset } = parsePaging(c);
+        const q = (c.req.query('q') || '').trim();
+        const status = (c.req.query('status') || 'all').toLowerCase();
+
+        const filters = [eq(marketingSubscribers.listId, listId)];
+        if (q) {
+            const pattern = `%${q}%`;
+            filters.push(
+                or(
+                    ilike(marketingSubscribers.email, pattern),
+                    ilike(marketingSubscribers.firstName, pattern),
+                    ilike(marketingSubscribers.lastName, pattern),
+                )!,
+            );
+        }
+        if (status === 'active') {
+            filters.push(isNull(marketingSubscribers.unsubscribedAt));
+        } else if (status === 'unsubscribed') {
+            filters.push(sql`${marketingSubscribers.unsubscribedAt} IS NOT NULL`);
+        }
+
+        const where = and(...filters);
+
+        const [totalRow] = await db
+            .select({ count: sql<number>`count(*)::int` })
+            .from(marketingSubscribers)
+            .where(where);
+        const total = totalRow?.count ?? 0;
+
+        const [activeRow] = await db
+            .select({ count: sql<number>`count(*)::int` })
+            .from(marketingSubscribers)
+            .where(and(eq(marketingSubscribers.listId, listId), isNull(marketingSubscribers.unsubscribedAt)));
+
         const subscribers = await db
             .select()
             .from(marketingSubscribers)
-            .where(eq(marketingSubscribers.listId, listId))
-            .orderBy(desc(marketingSubscribers.subscribedAt));
+            .where(where)
+            .orderBy(desc(marketingSubscribers.subscribedAt))
+            .limit(limit)
+            .offset(offset);
 
-        return c.json({ success: true, data: { subscribers } });
+        return c.json({
+            success: true,
+            data: {
+                subscribers,
+                activeCount: activeRow?.count ?? 0,
+                pagination: { limit, offset, total },
+            },
+        });
     }
 
     async addSubscriber(c: Context) {
@@ -125,7 +200,7 @@ export class MarketingListsController {
                 })
                 .where(eq(marketingSubscribers.id, existing.id))
                 .returning();
-            return c.json({ success: true, data: { subscriber: updated } });
+            return c.json({ success: true, data: { subscriber: updated, upserted: true } });
         }
 
         const [subscriber] = await db
@@ -140,7 +215,7 @@ export class MarketingListsController {
             })
             .returning();
 
-        return c.json({ success: true, data: { subscriber } }, 201);
+        return c.json({ success: true, data: { subscriber, upserted: false } }, 201);
     }
 
     async removeSubscriber(c: Context) {
@@ -166,29 +241,63 @@ export class MarketingListsController {
         const rows = Array.isArray(body?.subscribers) ? body.subscribers : [];
 
         let imported = 0;
+        let updated = 0;
+        let skipped = 0;
+
         for (const row of rows) {
-            if (!row?.email) continue;
+            if (!row?.email) {
+                skipped++;
+                continue;
+            }
             const email = String(row.email).trim().toLowerCase();
+            if (!email.includes('@')) {
+                skipped++;
+                continue;
+            }
+
+            const firstName = String(row.firstName ?? row.first_name ?? 'Subscriber').trim();
+            const lastName = String(row.lastName ?? row.last_name ?? '').trim() || '-';
+
             const [existing] = await db
-                .select({ id: marketingSubscribers.id })
+                .select({
+                    id: marketingSubscribers.id,
+                    firstName: marketingSubscribers.firstName,
+                    lastName: marketingSubscribers.lastName,
+                    unsubscribedAt: marketingSubscribers.unsubscribedAt,
+                })
                 .from(marketingSubscribers)
                 .where(and(eq(marketingSubscribers.listId, listId), eq(marketingSubscribers.email, email)))
                 .limit(1);
 
-            if (existing) continue;
+            if (existing) {
+                await db
+                    .update(marketingSubscribers)
+                    .set({
+                        firstName,
+                        lastName,
+                        unsubscribedAt: null,
+                        updatedAt: new Date(),
+                    })
+                    .where(eq(marketingSubscribers.id, existing.id));
+                updated++;
+                continue;
+            }
 
             await db.insert(marketingSubscribers).values({
                 listId,
                 email,
-                firstName: String(row.firstName ?? row.first_name ?? 'Subscriber').trim(),
-                lastName: String(row.lastName ?? row.last_name ?? '').trim() || '-',
+                firstName,
+                lastName,
                 source: 'import',
                 unsubscribeToken: unsubscribeToken(),
             });
             imported++;
         }
 
-        return c.json({ success: true, data: { imported } });
+        return c.json({
+            success: true,
+            data: { imported, updated, skipped, total: rows.length },
+        });
     }
 }
 
