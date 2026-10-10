@@ -447,7 +447,9 @@ export class PublicProductController {
                     requirements: p.metaRequirements ?? '',
                 },
                 trust: {
+                    verifiedListing: p.trustVerifiedListing ?? false,
                     verifiedByPlatform: p.trustVerifiedByPlatform ?? false,
+                    yoursaasCertified: p.trustYourSaaSCertified ?? false,
                 },
                 rating: avgRating ? Number(avgRating) : 0,
                 reviewCount: totalReviews ?? 0,
