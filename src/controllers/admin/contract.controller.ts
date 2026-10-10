@@ -1,9 +1,9 @@
 import type { Context } from 'hono';
 import { z } from 'zod';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, ilike, inArray, or } from 'drizzle-orm';
 import { contractService } from '../../services/contract.service.js';
 import { contractSettlementService } from '../../services/contract-settlement.service.js';
-import { contracts } from '../../db/schema.js';
+import { clients, contracts, developerProducts, developers } from '../../db/schema.js';
 import { db } from '../../db/index.js';
 import { env } from '../../config/env.js';
 
@@ -57,31 +57,135 @@ export class AdminContractController {
     async listContracts(c: Context) {
         const admin = assertAdmin(c);
         if (!admin) return c.json({ success: false, error: 'Unauthorized' }, 401);
-        const status = c.req.query('status');
-        const settlement = c.req.query('settlementStatus');
-        let rows;
-        if (settlement) {
-            rows = await db
-                .select()
-                .from(contracts)
-                .where(eq(contracts.settlementStatus, settlement))
-                .orderBy(desc(contracts.createdAt))
-                .limit(200);
-        } else if (status) {
-            rows = await db
-                .select()
-                .from(contracts)
-                .where(eq(contracts.status, status))
-                .orderBy(desc(contracts.createdAt))
-                .limit(200);
-        } else {
-            rows = await db.select().from(contracts).orderBy(desc(contracts.createdAt)).limit(200);
+
+        const status = c.req.query('status')?.trim() || undefined;
+        const settlement = c.req.query('settlementStatus')?.trim() || undefined;
+        const q = c.req.query('q')?.trim() || undefined;
+        const clientIdRaw = c.req.query('clientId');
+        const developerIdRaw = c.req.query('developerId');
+        const clientId = clientIdRaw ? parseInt(clientIdRaw, 10) : undefined;
+        const developerId = developerIdRaw ? parseInt(developerIdRaw, 10) : undefined;
+        const limitRaw = parseInt(c.req.query('limit') || '100', 10);
+        const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 200) : 100;
+
+        const conditions = [];
+        if (status) conditions.push(eq(contracts.status, status));
+        if (settlement) conditions.push(eq(contracts.settlementStatus, settlement));
+        if (Number.isInteger(clientId) && (clientId as number) > 0) {
+            conditions.push(eq(contracts.clientId, clientId as number));
         }
+        if (Number.isInteger(developerId) && (developerId as number) > 0) {
+            conditions.push(eq(contracts.developerId, developerId as number));
+        }
+        if (q) {
+            const asId = parseInt(q, 10);
+            const parts = [ilike(contracts.publicId, `%${q}%`)];
+            if (Number.isInteger(asId) && asId > 0) {
+                parts.push(eq(contracts.id, asId));
+            }
+            conditions.push(or(...parts));
+        }
+
+        const where = conditions.length ? and(...conditions) : undefined;
+
+        const rows = await db
+            .select({
+                id: contracts.id,
+                publicId: contracts.publicId,
+                clientId: contracts.clientId,
+                developerId: contracts.developerId,
+                productId: contracts.productId,
+                status: contracts.status,
+                planTier: contracts.planTier,
+                scopeText: contracts.scopeText,
+                deadlineAt: contracts.deadlineAt,
+                grossAmountPaise: contracts.grossAmountPaise,
+                nonRefundableFeePaise: contracts.nonRefundableFeePaise,
+                escrowAmountPaise: contracts.escrowAmountPaise,
+                currency: contracts.currency,
+                escrowFrozen: contracts.escrowFrozen,
+                developerReleasedPaise: contracts.developerReleasedPaise,
+                platformReleasedPaise: contracts.platformReleasedPaise,
+                settlementStatus: contracts.settlementStatus,
+                settlementMetaJson: contracts.settlementMetaJson,
+                submittedAt: contracts.submittedAt,
+                completedAt: contracts.completedAt,
+                createdAt: contracts.createdAt,
+                updatedAt: contracts.updatedAt,
+                clientName: clients.name,
+                clientEmail: clients.email,
+                developerName: developers.name,
+                developerEmail: developers.email,
+                productName: developerProducts.name,
+                productSlug: developerProducts.slug,
+            })
+            .from(contracts)
+            .leftJoin(clients, eq(contracts.clientId, clients.id))
+            .leftJoin(developers, eq(contracts.developerId, developers.id))
+            .leftJoin(developerProducts, eq(contracts.productId, developerProducts.id))
+            .where(where)
+            .orderBy(desc(contracts.createdAt))
+            .limit(limit);
+
         return c.json({
             success: true,
             data: rows,
-            meta: { autoSettlementEnabled: env.CONTRACT_AUTO_SETTLEMENT_ENABLED },
+            meta: {
+                autoSettlementEnabled: env.CONTRACT_AUTO_SETTLEMENT_ENABLED,
+                count: rows.length,
+                limit,
+            },
         });
+    }
+
+    async getContract(c: Context) {
+        const admin = assertAdmin(c);
+        if (!admin) return c.json({ success: false, error: 'Unauthorized' }, 401);
+
+        const idParam = c.req.param('contractId') || '';
+        const asNum = parseInt(idParam, 10);
+        const byPublicId = !Number.isInteger(asNum) || idParam.includes('-');
+
+        try {
+            const [row] = await db
+                .select({
+                    contract: contracts,
+                    clientName: clients.name,
+                    clientEmail: clients.email,
+                    developerName: developers.name,
+                    developerEmail: developers.email,
+                    productName: developerProducts.name,
+                    productSlug: developerProducts.slug,
+                })
+                .from(contracts)
+                .leftJoin(clients, eq(contracts.clientId, clients.id))
+                .leftJoin(developers, eq(contracts.developerId, developers.id))
+                .leftJoin(developerProducts, eq(contracts.productId, developerProducts.id))
+                .where(
+                    byPublicId
+                        ? eq(contracts.publicId, idParam)
+                        : eq(contracts.id, asNum)
+                )
+                .limit(1);
+
+            if (!row) return c.json({ success: false, error: 'Contract not found' }, 404);
+
+            return c.json({
+                success: true,
+                data: {
+                    ...row.contract,
+                    clientName: row.clientName,
+                    clientEmail: row.clientEmail,
+                    developerName: row.developerName,
+                    developerEmail: row.developerEmail,
+                    productName: row.productName,
+                    productSlug: row.productSlug,
+                },
+            });
+        } catch (e) {
+            console.error('[AdminContract] getContract error:', e);
+            return c.json({ success: false, error: 'Failed to load contract' }, 500);
+        }
     }
 
     async listSettlementIssues(c: Context) {

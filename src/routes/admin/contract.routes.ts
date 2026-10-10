@@ -9,7 +9,8 @@ adminContractRoutes.use('/*', authMiddleware);
 adminContractRoutes.get('/disputes', (c) => adminContractController.listDisputes(c));
 adminContractRoutes.post('/disputes/:disputeId/resolve', (c) => adminContractController.resolveDispute(c));
 adminContractRoutes.get('/settlements/issues', (c) => adminContractController.listSettlementIssues(c));
-adminContractRoutes.post('/:contractId/retry-settlement', (c) => adminContractController.retrySettlement(c));
 adminContractRoutes.get('/', (c) => adminContractController.listContracts(c));
+adminContractRoutes.get('/:contractId', (c) => adminContractController.getContract(c));
+adminContractRoutes.post('/:contractId/retry-settlement', (c) => adminContractController.retrySettlement(c));
 
 export default adminContractRoutes;
