@@ -192,12 +192,79 @@ export class MarketingCampaignsController {
             .limit(1);
 
         if (!campaign) return c.json({ success: false, error: 'Campaign not found' }, 404);
-        if (campaign.status !== 'draft') {
+        if (campaign.status !== 'draft' && campaign.status !== 'scheduled' && campaign.status !== 'failed') {
             return c.json({ success: false, error: 'Campaign has already been sent or is sending' }, 400);
         }
 
         campaignService.sendCampaignAsync(id);
         return c.json({ success: true, message: 'Campaign send started' });
+    }
+
+    async schedule(c: Context) {
+        if (!assertMarketing(c)) return c.json({ success: false, error: 'Unauthorized' }, 401);
+
+        const id = parseInt(c.req.param('id'), 10);
+        const body = await c.req.json().catch(() => null);
+        const whenRaw = body?.scheduledAt ? String(body.scheduledAt) : '';
+        const when = whenRaw ? new Date(whenRaw) : null;
+
+        if (!when || Number.isNaN(when.getTime())) {
+            return c.json({ success: false, error: 'scheduledAt must be a valid ISO datetime' }, 400);
+        }
+        if (when.getTime() <= Date.now() + 30_000) {
+            return c.json({ success: false, error: 'scheduledAt must be at least 30 seconds in the future' }, 400);
+        }
+
+        const [existing] = await db
+            .select({ status: marketingCampaigns.status })
+            .from(marketingCampaigns)
+            .where(eq(marketingCampaigns.id, id))
+            .limit(1);
+
+        if (!existing) return c.json({ success: false, error: 'Campaign not found' }, 404);
+        if (existing.status !== 'draft' && existing.status !== 'scheduled') {
+            return c.json({ success: false, error: 'Only draft or scheduled campaigns can be scheduled' }, 400);
+        }
+
+        const [campaign] = await db
+            .update(marketingCampaigns)
+            .set({
+                status: 'scheduled',
+                scheduledAt: when,
+                updatedAt: new Date(),
+            })
+            .where(eq(marketingCampaigns.id, id))
+            .returning();
+
+        return c.json({ success: true, data: { campaign }, message: 'Campaign scheduled' });
+    }
+
+    async unschedule(c: Context) {
+        if (!assertMarketing(c)) return c.json({ success: false, error: 'Unauthorized' }, 401);
+
+        const id = parseInt(c.req.param('id'), 10);
+        const [existing] = await db
+            .select({ status: marketingCampaigns.status })
+            .from(marketingCampaigns)
+            .where(eq(marketingCampaigns.id, id))
+            .limit(1);
+
+        if (!existing) return c.json({ success: false, error: 'Campaign not found' }, 404);
+        if (existing.status !== 'scheduled') {
+            return c.json({ success: false, error: 'Only scheduled campaigns can be unscheduled' }, 400);
+        }
+
+        const [campaign] = await db
+            .update(marketingCampaigns)
+            .set({
+                status: 'draft',
+                scheduledAt: null,
+                updatedAt: new Date(),
+            })
+            .where(eq(marketingCampaigns.id, id))
+            .returning();
+
+        return c.json({ success: true, data: { campaign }, message: 'Schedule cleared' });
     }
 
     async cancel(c: Context) {

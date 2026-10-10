@@ -40,6 +40,7 @@ import {
     marketingCampaignsRoutes,
 } from './routes/marketing/index.js';
 import { startContractJobs } from './jobs/contract-jobs.js';
+import { startMarketingJobs } from './jobs/marketing-jobs.js';
 import { startSubscriptionJobs } from './jobs/subscription-jobs.js';
 
 const app = new Hono();
@@ -170,5 +171,6 @@ serve({
 
 startContractJobs();
 startSubscriptionJobs();
+startMarketingJobs();
 
 export default app;

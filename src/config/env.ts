@@ -106,6 +106,11 @@ export const env = {
         60_000,
         parseInt(process.env.SUBSCRIPTION_EXPIRY_INTERVAL_MS || '300000', 10)
     ),
+    /** Background job interval for starting scheduled marketing campaigns (ms). */
+    MARKETING_SCHEDULE_INTERVAL_MS: Math.max(
+        30_000,
+        parseInt(process.env.MARKETING_SCHEDULE_INTERVAL_MS || '60000', 10)
+    ),
 
     /** OpenAI — Astra listing autofill (Ultimate plan) */
     OPENAI_API_KEY: process.env.OPENAI_API_KEY || '',

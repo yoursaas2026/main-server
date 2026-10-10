@@ -1,4 +1,4 @@
-import { eq, isNull, sql, desc, and } from 'drizzle-orm';
+import { eq, isNull, sql, desc, and, or } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import {
     marketingCampaigns,
@@ -68,6 +68,9 @@ export class CampaignService {
         if (campaign.status === 'cancelled') {
             return { ok: false, error: 'Cancelled campaigns cannot be resent — duplicate the draft' };
         }
+        if (campaign.status !== 'draft' && campaign.status !== 'scheduled' && campaign.status !== 'failed') {
+            return { ok: false, error: `Cannot send campaign in status "${campaign.status}"` };
+        }
 
         const subscribers = await db
             .select()
@@ -83,7 +86,7 @@ export class CampaignService {
             return { ok: false, error: 'No active subscribers on the selected list' };
         }
 
-        await db
+        const [claimed] = await db
             .update(marketingCampaigns)
             .set({
                 status: 'sending',
@@ -94,7 +97,21 @@ export class CampaignService {
                 failedCount: 0,
                 updatedAt: new Date(),
             })
-            .where(eq(marketingCampaigns.id, campaignId));
+            .where(
+                and(
+                    eq(marketingCampaigns.id, campaignId),
+                    or(
+                        eq(marketingCampaigns.status, 'draft'),
+                        eq(marketingCampaigns.status, 'scheduled'),
+                        eq(marketingCampaigns.status, 'failed'),
+                    ),
+                ),
+            )
+            .returning({ id: marketingCampaigns.id });
+
+        if (!claimed) {
+            return { ok: false, error: 'Campaign is already sending or no longer sendable' };
+        }
 
         let sentCount = 0;
         let failedCount = 0;
@@ -127,6 +144,7 @@ export class CampaignService {
                 to: sub.email,
                 subject: campaign.subject,
                 htmlContent: html,
+                textContent: campaign.textContent,
                 fromEmail: campaign.fromEmail,
                 fromName: campaign.fromName,
                 unsubscribeUrl,

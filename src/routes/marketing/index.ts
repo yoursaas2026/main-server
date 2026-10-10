@@ -39,6 +39,8 @@ marketingCampaignsRoutes.get('/:id', (c) => marketingCampaignsController.getOne(
 marketingCampaignsRoutes.post('/', (c) => marketingCampaignsController.create(c));
 marketingCampaignsRoutes.put('/:id', (c) => marketingCampaignsController.update(c));
 marketingCampaignsRoutes.post('/:id/send', (c) => marketingCampaignsController.send(c));
+marketingCampaignsRoutes.post('/:id/schedule', (c) => marketingCampaignsController.schedule(c));
+marketingCampaignsRoutes.post('/:id/unschedule', (c) => marketingCampaignsController.unschedule(c));
 marketingCampaignsRoutes.post('/:id/cancel', (c) => marketingCampaignsController.cancel(c));
 marketingCampaignsRoutes.delete('/:id', (c) => marketingCampaignsController.remove(c));
 

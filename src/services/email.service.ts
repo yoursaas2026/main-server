@@ -425,6 +425,7 @@ class MailuEmailService {
         to: string;
         subject: string;
         htmlContent: string;
+        textContent?: string | null;
         fromEmail: string;
         fromName: string;
         unsubscribeUrl: string;
@@ -435,11 +436,15 @@ class MailuEmailService {
                 <a href="${input.unsubscribeUrl}">Unsubscribe</a>
             </p>
         `;
+        const textFooter = `\n\n---\nUnsubscribe: ${input.unsubscribeUrl}`;
 
         return await this.sendEmail({
             to: input.to,
             subject: input.subject,
             htmlContent: `${input.htmlContent}${footer}`,
+            textContent: input.textContent
+                ? `${input.textContent}${textFooter}`
+                : `${input.subject}${textFooter}`,
             fromEmail: input.fromEmail,
             fromName: input.fromName,
             marketing: true,

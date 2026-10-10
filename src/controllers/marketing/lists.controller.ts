@@ -223,14 +223,41 @@ export class MarketingListsController {
 
         const listId = parseInt(c.req.param('id'), 10);
         const subId = parseInt(c.req.param('subId'), 10);
+        const hard = (c.req.query('hard') || '').toLowerCase() === 'true';
 
-        const [deleted] = await db
-            .delete(marketingSubscribers)
-            .where(and(eq(marketingSubscribers.id, subId), eq(marketingSubscribers.listId, listId)))
+        if (hard) {
+            const [deleted] = await db
+                .delete(marketingSubscribers)
+                .where(and(eq(marketingSubscribers.id, subId), eq(marketingSubscribers.listId, listId)))
+                .returning({ id: marketingSubscribers.id });
+
+            if (!deleted) return c.json({ success: false, error: 'Subscriber not found' }, 404);
+            return c.json({ success: true, message: 'Subscriber permanently deleted' });
+        }
+
+        const [updated] = await db
+            .update(marketingSubscribers)
+            .set({ unsubscribedAt: new Date(), updatedAt: new Date() })
+            .where(
+                and(
+                    eq(marketingSubscribers.id, subId),
+                    eq(marketingSubscribers.listId, listId),
+                    isNull(marketingSubscribers.unsubscribedAt),
+                ),
+            )
             .returning({ id: marketingSubscribers.id });
 
-        if (!deleted) return c.json({ success: false, error: 'Subscriber not found' }, 404);
-        return c.json({ success: true, message: 'Subscriber removed' });
+        if (!updated) {
+            const [exists] = await db
+                .select({ id: marketingSubscribers.id, unsubscribedAt: marketingSubscribers.unsubscribedAt })
+                .from(marketingSubscribers)
+                .where(and(eq(marketingSubscribers.id, subId), eq(marketingSubscribers.listId, listId)))
+                .limit(1);
+            if (!exists) return c.json({ success: false, error: 'Subscriber not found' }, 404);
+            return c.json({ success: true, message: 'Subscriber already unsubscribed' });
+        }
+
+        return c.json({ success: true, message: 'Subscriber unsubscribed (soft-removed)' });
     }
 
     async importSubscribers(c: Context) {
