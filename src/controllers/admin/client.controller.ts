@@ -1,5 +1,5 @@
 import type { Context } from 'hono';
-import { and, desc, eq, ilike, or } from 'drizzle-orm';
+import { and, count, desc, eq, ilike, or } from 'drizzle-orm';
 import { db } from '../../db/index.js';
 import { clients } from '../../db/schema.js';
 
@@ -17,18 +17,23 @@ export class AdminClientController {
 
         const q = (c.req.query('q') || '').trim();
         const status = (c.req.query('status') || '').trim().toLowerCase();
-        const limitRaw = Number.parseInt(c.req.query('limit') || '100', 10);
-        const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 200) : 100;
+        const limitRaw = Number.parseInt(c.req.query('limit') || '25', 10);
+        const offsetRaw = Number.parseInt(c.req.query('offset') || '0', 10);
+        const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 100) : 25;
+        const offset = Number.isFinite(offsetRaw) ? Math.max(offsetRaw, 0) : 0;
 
         try {
             const filters = [];
             if (q) {
-                const pattern = `%${q}%`;
+                const pattern = `%${q.replace(/[%_]/g, '')}%`;
+                const idExact = /^\d+$/.test(q) ? Number.parseInt(q, 10) : null;
                 filters.push(
                     or(
+                        ...(idExact != null ? [eq(clients.id, idExact)] : []),
                         ilike(clients.name, pattern),
                         ilike(clients.email, pattern),
                         ilike(clients.companyName, pattern),
+                        ilike(clients.phone, pattern),
                     ),
                 );
             }
@@ -37,6 +42,11 @@ export class AdminClientController {
             }
 
             const whereClause = filters.length ? and(...filters) : undefined;
+
+            const [totalRow] = await db
+                .select({ value: count() })
+                .from(clients)
+                .where(whereClause);
 
             const rows = await db
                 .select({
@@ -53,9 +63,20 @@ export class AdminClientController {
                 .from(clients)
                 .where(whereClause)
                 .orderBy(desc(clients.createdAt))
-                .limit(limit);
+                .limit(limit)
+                .offset(offset);
 
-            return c.json({ success: true, data: { clients: rows } });
+            return c.json({
+                success: true,
+                data: {
+                    clients: rows,
+                    pagination: {
+                        limit,
+                        offset,
+                        total: Number(totalRow?.value ?? 0),
+                    },
+                },
+            });
         } catch (error) {
             console.error('[AdminClient] listClients error:', error);
             return c.json({ success: false, error: 'Failed to fetch buyers' }, 500);

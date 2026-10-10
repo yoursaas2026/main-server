@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
 import { z } from 'zod';
-import { and, desc, eq, ilike, inArray, or } from 'drizzle-orm';
+import { and, count, desc, eq, ilike, inArray, or } from 'drizzle-orm';
 import { contractService } from '../../services/contract.service.js';
 import { contractSettlementService } from '../../services/contract-settlement.service.js';
 import { clients, contracts, developerProducts, developers } from '../../db/schema.js';
@@ -65,8 +65,10 @@ export class AdminContractController {
         const developerIdRaw = c.req.query('developerId');
         const clientId = clientIdRaw ? parseInt(clientIdRaw, 10) : undefined;
         const developerId = developerIdRaw ? parseInt(developerIdRaw, 10) : undefined;
-        const limitRaw = parseInt(c.req.query('limit') || '100', 10);
-        const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 200) : 100;
+        const limitRaw = parseInt(c.req.query('limit') || '25', 10);
+        const offsetRaw = parseInt(c.req.query('offset') || '0', 10);
+        const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 100) : 25;
+        const offset = Number.isFinite(offsetRaw) ? Math.max(offsetRaw, 0) : 0;
 
         const conditions = [];
         if (status) conditions.push(eq(contracts.status, status));
@@ -79,7 +81,15 @@ export class AdminContractController {
         }
         if (q) {
             const asId = parseInt(q, 10);
-            const parts = [ilike(contracts.publicId, `%${q}%`)];
+            const pattern = `%${q.replace(/[%_]/g, '')}%`;
+            const parts = [
+                ilike(contracts.publicId, pattern),
+                ilike(clients.name, pattern),
+                ilike(clients.email, pattern),
+                ilike(developers.name, pattern),
+                ilike(developers.email, pattern),
+                ilike(developerProducts.name, pattern),
+            ];
             if (Number.isInteger(asId) && asId > 0) {
                 parts.push(eq(contracts.id, asId));
             }
@@ -87,6 +97,14 @@ export class AdminContractController {
         }
 
         const where = conditions.length ? and(...conditions) : undefined;
+
+        const [totalRow] = await db
+            .select({ value: count() })
+            .from(contracts)
+            .leftJoin(clients, eq(contracts.clientId, clients.id))
+            .leftJoin(developers, eq(contracts.developerId, developers.id))
+            .leftJoin(developerProducts, eq(contracts.productId, developerProducts.id))
+            .where(where);
 
         const rows = await db
             .select({
@@ -125,7 +143,10 @@ export class AdminContractController {
             .leftJoin(developerProducts, eq(contracts.productId, developerProducts.id))
             .where(where)
             .orderBy(desc(contracts.createdAt))
-            .limit(limit);
+            .limit(limit)
+            .offset(offset);
+
+        const total = Number(totalRow?.value ?? 0);
 
         return c.json({
             success: true,
@@ -134,6 +155,9 @@ export class AdminContractController {
                 autoSettlementEnabled: env.CONTRACT_AUTO_SETTLEMENT_ENABLED,
                 count: rows.length,
                 limit,
+                offset,
+                total,
+                pagination: { limit, offset, total },
             },
         });
     }
@@ -191,21 +215,37 @@ export class AdminContractController {
     async listSettlementIssues(c: Context) {
         const admin = assertAdmin(c);
         if (!admin) return c.json({ success: false, error: 'Unauthorized' }, 401);
+
+        const limitRaw = parseInt(c.req.query('limit') || '25', 10);
+        const offsetRaw = parseInt(c.req.query('offset') || '0', 10);
+        const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 100) : 25;
+        const offset = Number.isFinite(offsetRaw) ? Math.max(offsetRaw, 0) : 0;
+
+        const where = and(
+            eq(contracts.status, 'completed'),
+            inArray(contracts.settlementStatus, ['failed', 'partial', 'skipped', 'pending']),
+        );
+
+        const [totalRow] = await db.select({ value: count() }).from(contracts).where(where);
         const rows = await db
             .select()
             .from(contracts)
-            .where(
-                and(
-                    eq(contracts.status, 'completed'),
-                    inArray(contracts.settlementStatus, ['failed', 'partial', 'skipped', 'pending'])
-                )
-            )
+            .where(where)
             .orderBy(desc(contracts.completedAt))
-            .limit(100);
+            .limit(limit)
+            .offset(offset);
+
+        const total = Number(totalRow?.value ?? 0);
         return c.json({
             success: true,
             data: rows,
-            meta: { autoSettlementEnabled: env.CONTRACT_AUTO_SETTLEMENT_ENABLED },
+            meta: {
+                autoSettlementEnabled: env.CONTRACT_AUTO_SETTLEMENT_ENABLED,
+                limit,
+                offset,
+                total,
+                pagination: { limit, offset, total },
+            },
         });
     }
 

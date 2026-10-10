@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 import { db } from '../../db/index.js';
 import { developers } from '../../db/schema.js';
-import { eq, desc } from 'drizzle-orm';
+import { and, count, desc, eq, ilike, or } from 'drizzle-orm';
 import { effectiveDeveloperPlan } from '../../utils/developer-plan.js';
 import { env } from '../../config/env.js';
 import { notificationService } from '../../services/notification.service.js';
@@ -14,8 +14,39 @@ export class AdminDeveloperController {
             return c.json({ success: false, error: 'Unauthorized' }, 401);
         }
 
+        const limitRaw = Number.parseInt(c.req.query('limit') || '25', 10);
+        const offsetRaw = Number.parseInt(c.req.query('offset') || '0', 10);
+        const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 100) : 25;
+        const offset = Number.isFinite(offsetRaw) ? Math.max(offsetRaw, 0) : 0;
+        const q = (c.req.query('q') || c.req.query('search') || '').trim();
+        const kycStatus = (c.req.query('kycStatus') || '').trim().toLowerCase();
+
         try {
-            const allDevelopers = await db
+            const filters = [];
+            if (q) {
+                const pattern = `%${q.replace(/[%_]/g, '')}%`;
+                const idExact = /^\d+$/.test(q) ? Number.parseInt(q, 10) : null;
+                filters.push(
+                    or(
+                        ...(idExact != null ? [eq(developers.id, idExact)] : []),
+                        ilike(developers.name, pattern),
+                        ilike(developers.email, pattern),
+                        ilike(developers.company, pattern),
+                        ilike(developers.phone, pattern),
+                    ),
+                );
+            }
+            if (kycStatus && ['pending', 'submitted', 'verified', 'rejected'].includes(kycStatus)) {
+                filters.push(eq(developers.kycStatus, kycStatus));
+            }
+            const whereClause = filters.length ? and(...filters) : undefined;
+
+            const [totalRow] = await db
+                .select({ value: count() })
+                .from(developers)
+                .where(whereClause);
+
+            const rows = await db
                 .select({
                     id: developers.id,
                     name: developers.name,
@@ -29,15 +60,23 @@ export class AdminDeveloperController {
                     planEndDate: developers.planEndDate,
                 })
                 .from(developers)
-                .orderBy(desc(developers.createdAt));
+                .where(whereClause)
+                .orderBy(desc(developers.createdAt))
+                .limit(limit)
+                .offset(offset);
 
             return c.json({
                 success: true,
                 data: {
-                    developers: allDevelopers.map(({ planEndDate, ...d }) => ({
+                    developers: rows.map(({ planEndDate, ...d }) => ({
                         ...d,
                         plan: effectiveDeveloperPlan(d.plan, planEndDate),
                     })),
+                    pagination: {
+                        limit,
+                        offset,
+                        total: Number(totalRow?.value ?? 0),
+                    },
                 },
             });
         } catch (error) {

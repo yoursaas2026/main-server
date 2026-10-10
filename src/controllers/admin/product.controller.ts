@@ -114,7 +114,7 @@ export class AdminProductController {
             return c.json({ success: false, error: 'Unauthorized' }, 401);
         }
 
-        const limit = Math.min(Math.max(parseInt(c.req.query('limit') || '50', 10), 1), 100);
+        const limit = Math.min(Math.max(parseInt(c.req.query('limit') || '25', 10), 1), 100);
         const offset = Math.max(parseInt(c.req.query('offset') || '0', 10), 0);
         const searchRaw = (c.req.query('search') || '').trim();
         const pattern = searchRaw ? `%${escapeIlikePattern(searchRaw)}%` : null;
