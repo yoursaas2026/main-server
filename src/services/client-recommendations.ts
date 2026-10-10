@@ -221,10 +221,15 @@ export async function listLiveMarketplaceProducts(options: {
     let buyer: BuyerScoreContext | null = null;
     let client: typeof clients.$inferSelect | null = null;
     if (options.clientId) {
-        const loaded = await loadBuyer(options.clientId);
-        if (loaded) {
-            client = loaded.client;
-            buyer = loaded.buyer;
+        try {
+            const loaded = await loadBuyer(options.clientId);
+            if (loaded) {
+                client = loaded.client;
+                buyer = loaded.buyer;
+            }
+        } catch (err) {
+            // Personalization must never 500 the public catalog.
+            console.error('[Discovery] loadBuyer failed; continuing without buyer context:', err);
         }
     }
 
@@ -235,24 +240,34 @@ export async function listLiveMarketplaceProducts(options: {
 
     // Semantic retrieval when user typed a search query
     if (searchRaw.length >= 2) {
-        const candidates = await getSearchCandidates(searchRaw, {
-            limit: 50,
-            categoryId: options.categoryId,
-        });
-        queryId = candidates.queryId;
-        retrievalMode = candidates.mode;
-        semanticScores = candidates.semanticScores;
-        if (candidates.candidateIds.length > 0) {
-            candidateIdSet = new Set(candidates.candidateIds);
+        try {
+            const candidates = await getSearchCandidates(searchRaw, {
+                limit: 50,
+                categoryId: options.categoryId,
+            });
+            queryId = candidates.queryId;
+            retrievalMode = candidates.mode;
+            semanticScores = candidates.semanticScores;
+            if (candidates.candidateIds.length > 0) {
+                candidateIdSet = new Set(candidates.candidateIds);
+            }
+        } catch (err) {
+            console.error('[Discovery] getSearchCandidates failed; using keyword fallback:', err);
+            queryId = `q_fallback_${Date.now().toString(36)}`;
+            retrievalMode = 'fallback';
         }
     } else if (options.sort === 'recommended' && buyer) {
         // Home-style: soft vector recall from interest profile
-        const candidates = await getHomeCandidates(buyer.interestProfile, { limit: 40 });
-        queryId = candidates.queryId;
-        if (candidates.mode === 'vector' && candidates.candidateIds.length > 0) {
-            retrievalMode = 'vector';
-            semanticScores = candidates.semanticScores;
-            // Don't restrict to only candidates — boost them via semanticScores while scoring all
+        try {
+            const candidates = await getHomeCandidates(buyer.interestProfile, { limit: 40 });
+            queryId = candidates.queryId;
+            if (candidates.mode === 'vector' && candidates.candidateIds.length > 0) {
+                retrievalMode = 'vector';
+                semanticScores = candidates.semanticScores;
+                // Don't restrict to only candidates — boost them via semanticScores while scoring all
+            }
+        } catch (err) {
+            console.error('[Discovery] getHomeCandidates failed; continuing without vector boost:', err);
         }
     }
 

@@ -37,18 +37,23 @@ export async function getSearchCandidates(
         return { semanticScores: new Map(), candidateIds: [], mode: 'fallback', queryId };
     }
 
-    const vector = await embedText(q);
-    if (!vector) {
+    try {
+        const vector = await embedText(q);
+        if (!vector) {
+            return { semanticScores: new Map(), candidateIds: [], mode: 'fallback', queryId };
+        }
+
+        const hits = await searchListingVectors(vector, {
+            limit: options?.limit ?? 50,
+            categoryId: options?.categoryId,
+            onlyLive: true,
+        });
+
+        return hitsToCandidateSet(hits, queryId);
+    } catch (err) {
+        console.error('[Discovery] getSearchCandidates failed:', err);
         return { semanticScores: new Map(), candidateIds: [], mode: 'fallback', queryId };
     }
-
-    const hits = await searchListingVectors(vector, {
-        limit: options?.limit ?? 50,
-        categoryId: options?.categoryId,
-        onlyLive: true,
-    });
-
-    return hitsToCandidateSet(hits, queryId);
 }
 
 /** Profile-based home candidates (synthetic query from interest tags). */
@@ -61,18 +66,23 @@ export async function getHomeCandidates(
         return { semanticScores: new Map(), candidateIds: [], mode: 'fallback', queryId };
     }
 
-    const synthetic = profileSyntheticQuery(profile);
-    const vector = await embedText(synthetic);
-    if (!vector) {
+    try {
+        const synthetic = profileSyntheticQuery(profile);
+        const vector = await embedText(synthetic);
+        if (!vector) {
+            return { semanticScores: new Map(), candidateIds: [], mode: 'fallback', queryId };
+        }
+
+        const hits = await searchListingVectors(vector, {
+            limit: options?.limit ?? 40,
+            onlyLive: true,
+        });
+
+        return hitsToCandidateSet(hits, queryId);
+    } catch (err) {
+        console.error('[Discovery] getHomeCandidates failed:', err);
         return { semanticScores: new Map(), candidateIds: [], mode: 'fallback', queryId };
     }
-
-    const hits = await searchListingVectors(vector, {
-        limit: options?.limit ?? 40,
-        onlyLive: true,
-    });
-
-    return hitsToCandidateSet(hits, queryId);
 }
 
 /** Similar listings to a seed product (by re-embedding seed text or searching near seed vector via seed id). */
