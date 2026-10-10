@@ -213,7 +213,7 @@ See `.env.example` for full list.
 4. Developers must complete **payout bank verification** before payouts succeed.
 5. Ops: Admin → **Settlements** (`/dashboard/settlements`) lists failed/partial/skipped/pending and can **Retry settlement**. Background job also retries automatically (same interval as auto-complete).
 6. Ensure CORS includes client, developer, and admin portal origins.
-7. GetStream: buyer–seller DM must exist for contract bot messages.
+7. GetStream: contract bot **creates** the buyer–seller DM if missing, then posts lifecycle messages.
 
 ---
 

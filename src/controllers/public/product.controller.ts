@@ -1,7 +1,14 @@
 import type { Context } from 'hono';
 import { and, avg, count, desc, eq } from 'drizzle-orm';
 import { db } from '../../db/index.js';
-import { clients, developerProducts, developers, productCategories, productReviews } from '../../db/schema.js';
+import {
+    clients,
+    contracts,
+    developerProducts,
+    developers,
+    productCategories,
+    productReviews,
+} from '../../db/schema.js';
 import { absoluteMediaUrl } from '../../services/stream-chat.service.js';
 import { env } from '../../config/env.js';
 import {
@@ -174,6 +181,22 @@ export class PublicProductController {
         return jwtUser.id;
     }
 
+    /** Buyer may leave/edit a review only after a completed escrow contract on this product. */
+    private async hasCompletedContractForProduct(clientId: number, productId: number): Promise<boolean> {
+        const [row] = await db
+            .select({ id: contracts.id })
+            .from(contracts)
+            .where(
+                and(
+                    eq(contracts.clientId, clientId),
+                    eq(contracts.productId, productId),
+                    eq(contracts.status, 'completed'),
+                ),
+            )
+            .limit(1);
+        return Boolean(row);
+    }
+
     async listReviews(c: Context) {
         const slug = (c.req.param('slug') || '').trim().toLowerCase();
         if (!slug) return c.json({ success: false, error: 'Invalid slug' }, 400);
@@ -210,7 +233,7 @@ export class PublicProductController {
             const reviews = rows.map((r) => ({
                 id: r.id,
                 user: r.userName,
-                role: r.companyName || 'Verified user',
+                role: r.companyName || 'Verified purchase',
                 rating: r.rating,
                 text: r.comment,
                 createdAt: r.createdAt,
@@ -219,12 +242,18 @@ export class PublicProductController {
                 developerRepliedAt: r.developerRepliedAt,
             }));
 
+            const canReview =
+                currentClientId != null
+                    ? await this.hasCompletedContractForProduct(currentClientId, product.id)
+                    : false;
+
             return c.json({
                 success: true,
                 data: {
                     rating: avgRating ? Number(avgRating) : 0,
                     reviewCount: totalReviews ?? 0,
                     reviews,
+                    canReview,
                 },
             });
         } catch (error) {
@@ -258,6 +287,20 @@ export class PublicProductController {
                 .from(productReviews)
                 .where(and(eq(productReviews.productId, product.id), eq(productReviews.clientId, jwtUser.id)))
                 .limit(1);
+
+            // New reviews require a completed escrow; owners may still edit an existing review.
+            if (!existing) {
+                const eligible = await this.hasCompletedContractForProduct(jwtUser.id, product.id);
+                if (!eligible) {
+                    return c.json(
+                        {
+                            success: false,
+                            error: 'You can leave a review after a completed contract for this product.',
+                        },
+                        403,
+                    );
+                }
+            }
 
             let reviewId: number;
             if (existing) {
@@ -453,10 +496,14 @@ export class PublicProductController {
                 },
                 rating: avgRating ? Number(avgRating) : 0,
                 reviewCount: totalReviews ?? 0,
+                canReview:
+                    currentClientId != null
+                        ? await this.hasCompletedContractForProduct(currentClientId, p.id)
+                        : false,
                 reviews: reviewRows.map((r) => ({
                     id: r.id,
                     user: r.userName,
-                    role: r.companyName || 'Verified user',
+                    role: r.companyName || 'Verified purchase',
                     rating: r.rating,
                     text: r.comment,
                     createdAt: r.createdAt,

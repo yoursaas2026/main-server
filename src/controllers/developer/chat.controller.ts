@@ -2,7 +2,7 @@ import type { Context } from 'hono';
 import { and, eq } from 'drizzle-orm';
 import { env } from '../../config/env.js';
 import { db } from '../../db/index.js';
-import { clients, developerProducts, developers, productReviews } from '../../db/schema.js';
+import { clients, contracts, developerProducts, developers, productReviews } from '../../db/schema.js';
 import type { JWTPayload } from '../../utils/jwt.js';
 import {
     absoluteMediaUrl,
@@ -74,8 +74,8 @@ export class DeveloperChatController {
     }
 
     /**
-     * Open (or reuse) a DM with a buyer. Allowed only if the buyer has reviewed at least one of this developer's products
-     * (reduces unsolicited spam while still supporting post-purchase conversations).
+     * Open (or reuse) a DM with a buyer. Allowed if there is a contract or a review
+     * with that buyer (aligned with video initiate rules).
      * Body: { clientId: number }
      */
     async postThread(c: Context) {
@@ -93,7 +93,7 @@ export class DeveloperChatController {
         }
 
         try {
-            const [link] = await db
+            const [reviewLink] = await db
                 .select({ id: productReviews.id })
                 .from(productReviews)
                 .innerJoin(developerProducts, eq(productReviews.productId, developerProducts.id))
@@ -105,11 +105,17 @@ export class DeveloperChatController {
                 )
                 .limit(1);
 
-            if (!link) {
+            const [contractLink] = await db
+                .select({ id: contracts.id })
+                .from(contracts)
+                .where(and(eq(contracts.developerId, jwtUser.id), eq(contracts.clientId, clientId)))
+                .limit(1);
+
+            if (!reviewLink && !contractLink) {
                 return c.json(
                     {
                         success: false,
-                        error: 'You can only message buyers who have left a review on one of your listings.',
+                        error: 'You can only message buyers you have a contract or review relationship with.',
                     },
                     403,
                 );
