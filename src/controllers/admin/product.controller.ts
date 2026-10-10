@@ -1,5 +1,5 @@
 import type { Context } from 'hono';
-import { and, asc, desc, eq, ilike, or, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, ilike, or, sql } from 'drizzle-orm';
 import { db } from '../../db/index.js';
 import { developerProducts, developers, productCategories } from '../../db/schema.js';
 import { effectiveDeveloperPlan } from '../../utils/developer-plan.js';
@@ -336,7 +336,23 @@ export class AdminProductController {
 
     async listCategories(c: Context) {
         if (!assertAdmin(c)) return c.json({ success: false, error: 'Unauthorized' }, 401);
+
+        const limitRaw = Number.parseInt(c.req.query('limit') || '25', 10);
+        const offsetRaw = Number.parseInt(c.req.query('offset') || '0', 10);
+        const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 100) : 25;
+        const offset = Number.isFinite(offsetRaw) ? Math.max(offsetRaw, 0) : 0;
+        const q = (c.req.query('q') || c.req.query('search') || '').trim();
+
         try {
+            const whereExpr = q
+                ? ilike(productCategories.name, `%${escapeIlikePattern(q)}%`)
+                : undefined;
+
+            const [totalRow] = await db
+                .select({ value: count() })
+                .from(productCategories)
+                .where(whereExpr);
+
             const rows = await db
                 .select({
                     id: productCategories.id,
@@ -345,17 +361,27 @@ export class AdminProductController {
                 })
                 .from(productCategories)
                 .leftJoin(developerProducts, eq(developerProducts.productCategoryId, productCategories.id))
+                .where(whereExpr)
                 .groupBy(productCategories.id, productCategories.name)
-                .orderBy(asc(productCategories.name));
+                .orderBy(asc(productCategories.name))
+                .limit(limit)
+                .offset(offset);
+
             const [noneRow] = await db
                 .select({ productCount: sql<number>`count(*)::int` })
                 .from(developerProducts)
                 .where(sql`${developerProducts.productCategoryId} IS NULL`);
+
             return c.json({
                 success: true,
                 data: {
                     categories: rows,
                     none: { id: null, name: 'None', productCount: noneRow?.productCount ?? 0 },
+                    pagination: {
+                        limit,
+                        offset,
+                        total: Number(totalRow?.value ?? 0),
+                    },
                 },
             });
         } catch (error) {

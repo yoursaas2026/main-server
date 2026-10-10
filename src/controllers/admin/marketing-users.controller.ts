@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 import { db } from '../../db/index.js';
 import { marketingUsers } from '../../db/schema.js';
-import { eq } from 'drizzle-orm';
+import { and, count, desc, eq, ilike, or } from 'drizzle-orm';
 import { hashPassword } from '../../utils/password.js';
 import { emailService } from '../../services/email.service.js';
 import { assertAdmin } from '../../utils/marketing-guard.js';
@@ -9,6 +9,32 @@ import { assertAdmin } from '../../utils/marketing-guard.js';
 export class AdminMarketingUsersController {
     async list(c: Context) {
         if (!assertAdmin(c)) return c.json({ success: false, error: 'Unauthorized' }, 401);
+
+        const limitRaw = Number.parseInt(c.req.query('limit') || '25', 10);
+        const offsetRaw = Number.parseInt(c.req.query('offset') || '0', 10);
+        const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 100) : 25;
+        const offset = Number.isFinite(offsetRaw) ? Math.max(offsetRaw, 0) : 0;
+        const q = (c.req.query('q') || '').trim();
+
+        const filters = [];
+        if (q) {
+            const pattern = `%${q.replace(/[%_]/g, '')}%`;
+            const idExact = /^\d+$/.test(q) ? Number.parseInt(q, 10) : null;
+            filters.push(
+                or(
+                    ...(idExact != null ? [eq(marketingUsers.id, idExact)] : []),
+                    ilike(marketingUsers.name, pattern),
+                    ilike(marketingUsers.email, pattern),
+                    ilike(marketingUsers.mailboxEmail, pattern),
+                ),
+            );
+        }
+        const whereClause = filters.length ? and(...filters) : undefined;
+
+        const [totalRow] = await db
+            .select({ value: count() })
+            .from(marketingUsers)
+            .where(whereClause);
 
         const users = await db
             .select({
@@ -21,9 +47,22 @@ export class AdminMarketingUsersController {
                 createdAt: marketingUsers.createdAt,
             })
             .from(marketingUsers)
-            .orderBy(marketingUsers.id);
+            .where(whereClause)
+            .orderBy(desc(marketingUsers.id))
+            .limit(limit)
+            .offset(offset);
 
-        return c.json({ success: true, data: { users } });
+        return c.json({
+            success: true,
+            data: {
+                users,
+                pagination: {
+                    limit,
+                    offset,
+                    total: Number(totalRow?.value ?? 0),
+                },
+            },
+        });
     }
 
     async create(c: Context) {

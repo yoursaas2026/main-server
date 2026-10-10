@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 import { db } from '../../db/index.js';
 import { admins } from '../../db/schema.js';
-import { eq } from 'drizzle-orm';
+import { and, count, desc, eq, ilike, or } from 'drizzle-orm';
 import { generateToken } from '../../utils/jwt.js';
 import { hashPassword, comparePassword, generateResetToken } from '../../utils/password.js';
 import { ForgotPasswordSchema, ResetPasswordSchema } from '../../types/auth.types.js';
@@ -211,7 +211,28 @@ export class AdminAuthController {
             return c.json({ success: false, error: 'Unauthorized' }, 401);
         }
 
+        const limitRaw = Number.parseInt(c.req.query('limit') || '25', 10);
+        const offsetRaw = Number.parseInt(c.req.query('offset') || '0', 10);
+        const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 100) : 25;
+        const offset = Number.isFinite(offsetRaw) ? Math.max(offsetRaw, 0) : 0;
+        const q = (c.req.query('q') || c.req.query('search') || '').trim();
+
         try {
+            const filters = [];
+            if (q) {
+                const pattern = `%${q.replace(/[%_]/g, '')}%`;
+                const idExact = /^\d+$/.test(q) ? Number.parseInt(q, 10) : null;
+                filters.push(
+                    or(
+                        ...(idExact != null ? [eq(admins.id, idExact)] : []),
+                        ilike(admins.name, pattern),
+                        ilike(admins.email, pattern),
+                    ),
+                );
+            }
+            const whereClause = filters.length ? and(...filters) : undefined;
+
+            const [totalRow] = await db.select({ value: count() }).from(admins).where(whereClause);
             const allAdmins = await db
                 .select({
                     id: admins.id,
@@ -220,12 +241,25 @@ export class AdminAuthController {
                     profilePicture: admins.profilePicture,
                     status: admins.status,
                     lastLoginAt: admins.lastLoginAt,
-                    createdAt: admins.createdAt
+                    createdAt: admins.createdAt,
                 })
                 .from(admins)
-                .orderBy(admins.id);
+                .where(whereClause)
+                .orderBy(desc(admins.id))
+                .limit(limit)
+                .offset(offset);
 
-            return c.json({ success: true, data: { admins: allAdmins } });
+            return c.json({
+                success: true,
+                data: {
+                    admins: allAdmins,
+                    pagination: {
+                        limit,
+                        offset,
+                        total: Number(totalRow?.value ?? 0),
+                    },
+                },
+            });
         } catch (error) {
             console.error('[AdminAuth] getAllAdmins error:', error);
             return c.json({ success: false, error: 'Failed to fetch admins' }, 500);

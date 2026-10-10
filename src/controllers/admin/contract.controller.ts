@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { and, count, desc, eq, ilike, inArray, or } from 'drizzle-orm';
 import { contractService } from '../../services/contract.service.js';
 import { contractSettlementService } from '../../services/contract-settlement.service.js';
-import { clients, contracts, developerProducts, developers } from '../../db/schema.js';
+import { clients, contractDisputes, contracts, developerProducts, developers } from '../../db/schema.js';
 import { db } from '../../db/index.js';
 import { env } from '../../config/env.js';
 
@@ -24,14 +24,55 @@ export class AdminContractController {
     async listDisputes(c: Context) {
         const admin = assertAdmin(c);
         if (!admin) return c.json({ success: false, error: 'Unauthorized' }, 401);
-        const rows = await contractService.listDisputesForAdmin();
-        const enriched = await Promise.all(
-            rows.map(async (d) => {
-                const [ct] = await db.select().from(contracts).where(eq(contracts.id, d.contractId)).limit(1);
-                return { dispute: d, contract: ct ?? null };
+
+        const limitRaw = parseInt(c.req.query('limit') || '25', 10);
+        const offsetRaw = parseInt(c.req.query('offset') || '0', 10);
+        const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 100) : 25;
+        const offset = Number.isFinite(offsetRaw) ? Math.max(offsetRaw, 0) : 0;
+        const q = (c.req.query('q') || '').trim();
+
+        const conditions = [eq(contractDisputes.status, 'open')];
+        if (q) {
+            const pattern = `%${q.replace(/[%_]/g, '')}%`;
+            const asId = parseInt(q, 10);
+            const parts = [ilike(contracts.publicId, pattern), ilike(contractDisputes.reason, pattern)];
+            if (Number.isInteger(asId) && asId > 0) {
+                parts.push(eq(contractDisputes.id, asId));
+                parts.push(eq(contracts.id, asId));
+            }
+            conditions.push(or(...parts)!);
+        }
+        const where = and(...conditions);
+
+        const [totalRow] = await db
+            .select({ value: count() })
+            .from(contractDisputes)
+            .leftJoin(contracts, eq(contractDisputes.contractId, contracts.id))
+            .where(where);
+
+        const rows = await db
+            .select({
+                dispute: contractDisputes,
+                contract: contracts,
             })
-        );
-        return c.json({ success: true, data: enriched });
+            .from(contractDisputes)
+            .leftJoin(contracts, eq(contractDisputes.contractId, contracts.id))
+            .where(where)
+            .orderBy(desc(contractDisputes.createdAt))
+            .limit(limit)
+            .offset(offset);
+
+        const enriched = rows.map((r) => ({
+            dispute: r.dispute,
+            contract: r.contract ?? null,
+        }));
+
+        const total = Number(totalRow?.value ?? 0);
+        return c.json({
+            success: true,
+            data: enriched,
+            meta: { pagination: { limit, offset, total }, total },
+        });
     }
 
     async resolveDispute(c: Context) {
