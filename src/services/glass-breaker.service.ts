@@ -9,7 +9,9 @@ import {
     glassBreakerEvents,
     marketingUsers,
 } from '../db/schema.js';
+import { env } from '../config/env.js';
 import { contractSettlementService } from './contract-settlement.service.js';
+import { notificationService } from './notification.service.js';
 
 export const GLASS_BREAKER_CONFIRM_PHRASE = 'BREAK GLASS';
 
@@ -446,6 +448,16 @@ class GlassBreakerService {
             .set(patch)
             .where(eq(developers.id, targetId))
             .returning();
+
+        if (action === 'force_kyc_verified' || action === 'force_kyc_rejected') {
+            notificationService.sendKycDecisionEmail(
+                updated.email,
+                updated.name || 'Seller',
+                action === 'force_kyc_verified' ? 'verified' : 'rejected',
+                updated.kycRejectionReason,
+                env.DEVELOPER_PORTAL_URL,
+            );
+        }
 
         return { before, after: pickDevSnapshot(updated), meta: {} };
     }

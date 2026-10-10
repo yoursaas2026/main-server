@@ -52,6 +52,23 @@ class NotificationService {
             );
         });
     }
+
+    sendKycDecisionEmail(
+        email: string,
+        name: string,
+        decision: 'verified' | 'rejected',
+        reason?: string | null,
+        appUrl?: string,
+    ): void {
+        emailService.sendKycDecisionEmail(email, name, decision, reason, appUrl).catch((err) => {
+            console.error(
+                '[NotificationService] Failed to send KYC %s email to %s:',
+                decision,
+                email,
+                err,
+            );
+        });
+    }
 }
 
 export const notificationService = new NotificationService();

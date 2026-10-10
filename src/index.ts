@@ -9,6 +9,8 @@ import { env } from './config/env.js';
 import adminAuthRoutes from './routes/admin/auth.routes.js';
 import adminDeveloperRoutes from './routes/admin/developer.routes.js';
 import adminProductRoutes from './routes/admin/product.routes.js';
+import adminClientRoutes from './routes/admin/client.routes.js';
+import adminOverviewRoutes from './routes/admin/overview.routes.js';
 import developerAuthRoutes from './routes/developer/auth.routes.js';
 import developerKycRoutes from './routes/developer/kyc.routes.js';
 import developerPaymentRoutes from './routes/developer/payment.routes.js';
@@ -98,6 +100,8 @@ app.get('/', async (c) => {
 app.route('/api/admin/auth', adminAuthRoutes);
 app.route('/api/admin/developers', adminDeveloperRoutes);
 app.route('/api/admin/products', adminProductRoutes);
+app.route('/api/admin/clients', adminClientRoutes);
+app.route('/api/admin/overview', adminOverviewRoutes);
 app.route('/api/developer/auth', developerAuthRoutes);
 app.route('/api/developer/kyc', developerKycRoutes);
 app.route('/api/developer/payment', developerPaymentRoutes);

@@ -361,6 +361,63 @@ class MailuEmailService {
         });
     }
 
+    async sendKycDecisionEmail(
+        email: string,
+        name: string,
+        decision: 'verified' | 'rejected',
+        reason?: string | null,
+        appUrl: string = env.DEVELOPER_PORTAL_URL,
+    ): Promise<boolean> {
+        const safeName = escapeHtml(name || 'there');
+        const dashboardUrl = `${appUrl.replace(/\/$/, '')}/dashboard/kyc`;
+        const approved = decision === 'verified';
+        const safeReason = reason ? escapeHtml(reason) : '';
+
+        const htmlContent = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+                    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                    .header { background: ${approved ? '#0f766e' : '#b91c1c'}; color: white; padding: 28px; text-align: center; border-radius: 8px 8px 0 0; }
+                    .content { background: #f9f9f9; padding: 28px; border-radius: 0 0 8px 8px; }
+                    .button { display: inline-block; padding: 12px 28px; background: #1C2B33; color: white; text-decoration: none; border-radius: 5px; margin-top: 18px; }
+                    .reason { background: #fff; border-left: 4px solid #b91c1c; padding: 12px 14px; margin-top: 16px; }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header">
+                        <h1>${approved ? 'KYC verified' : 'KYC needs attention'}</h1>
+                    </div>
+                    <div class="content">
+                        <h2>Hi ${safeName},</h2>
+                        ${
+                            approved
+                                ? `<p>Your identity verification on YourSaaS was approved. You can continue onboarding (bank / payouts / go-live) from your seller dashboard.</p>`
+                                : `<p>Your identity verification on YourSaaS was not approved. Please review the note below, update your documents, and resubmit.</p>
+                                   ${safeReason ? `<div class="reason"><strong>Reason:</strong><br/>${safeReason}</div>` : ''}`
+                        }
+                        <a href="${dashboardUrl}" class="button">${approved ? 'Open seller dashboard' : 'Fix KYC & resubmit'}</a>
+                    </div>
+                </div>
+            </body>
+            </html>
+        `;
+
+        return await this.sendEmail({
+            to: email,
+            subject: approved
+                ? 'YourSaaS KYC verified'
+                : 'YourSaaS KYC update required',
+            htmlContent,
+            textContent: approved
+                ? `Hi ${name}, your KYC was verified. Open ${dashboardUrl}`
+                : `Hi ${name}, your KYC was rejected${reason ? `: ${reason}` : ''}. Open ${dashboardUrl}`,
+        });
+    }
+
     async sendCampaignEmail(input: {
         to: string;
         subject: string;
@@ -385,6 +442,14 @@ class MailuEmailService {
             marketing: true,
         });
     }
+}
+
+function escapeHtml(value: string): string {
+    return value
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
 }
 
 export const emailService = new MailuEmailService();

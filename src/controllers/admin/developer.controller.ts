@@ -3,6 +3,8 @@ import { db } from '../../db/index.js';
 import { developers } from '../../db/schema.js';
 import { eq, desc } from 'drizzle-orm';
 import { effectiveDeveloperPlan } from '../../utils/developer-plan.js';
+import { env } from '../../config/env.js';
+import { notificationService } from '../../services/notification.service.js';
 
 export class AdminDeveloperController {
     // ── Get All Developers ───────────────────────────────────────────────────
@@ -107,7 +109,21 @@ export class AdminDeveloperController {
         }
 
         try {
-            const updateData: any = {
+            const [existing] = await db
+                .select({
+                    id: developers.id,
+                    email: developers.email,
+                    name: developers.name,
+                })
+                .from(developers)
+                .where(eq(developers.id, devId))
+                .limit(1);
+
+            if (!existing) {
+                return c.json({ success: false, error: 'Developer not found' }, 404);
+            }
+
+            const updateData: Record<string, unknown> = {
                 kycStatus: body.status,
             };
 
@@ -136,7 +152,13 @@ export class AdminDeveloperController {
                 return c.json({ success: false, error: 'Developer not found' }, 404);
             }
 
-            // Note: You could trigger an email notification here alerting the developer about their KYC status.
+            notificationService.sendKycDecisionEmail(
+                existing.email,
+                existing.name || 'Seller',
+                body.status === 'verified' ? 'verified' : 'rejected',
+                updated.kycRejectionReason,
+                env.DEVELOPER_PORTAL_URL,
+            );
 
             return c.json({ success: true, message: `KYC status updated to ${body.status}`, data: { kyc: updated } });
         } catch (error) {
