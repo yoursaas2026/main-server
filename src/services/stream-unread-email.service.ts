@@ -4,6 +4,7 @@ import { db } from '../db/index.js';
 import { clients, developers } from '../db/schema.js';
 import { notificationService } from './notification.service.js';
 import { parseStreamUserId } from './stream-chat.service.js';
+import { parseClientNotificationPrefs } from '../utils/client-notification-prefs.js';
 
 type ReminderChannelPayload = {
     channel?: {
@@ -89,11 +90,21 @@ export async function handleUnreadMessageReminder(event: UnreadReminderEvent): P
 
     if (party.role === 'client') {
         const [row] = await db
-            .select({ id: clients.id, email: clients.email, name: clients.name })
+            .select({
+                id: clients.id,
+                email: clients.email,
+                name: clients.name,
+                notificationPrefs: clients.notificationPrefs,
+            })
             .from(clients)
             .where(eq(clients.id, party.id))
             .limit(1);
         if (!row?.email) return { emailed: false };
+
+        const prefs = parseClientNotificationPrefs(row.notificationPrefs);
+        if (!prefs.emailUnreadDm) {
+            return { emailed: false };
+        }
 
         const inboxUrl = `${env.USER_PORTAL_URL.replace(/\/$/, '')}/dashboard/messages`;
         notificationService.sendUnreadMessageEmail({

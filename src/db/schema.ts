@@ -176,6 +176,11 @@ export const clients = pgTable('clients', {
      * { version, base: Record<tag, number>, learned: Record<tag, number>, updatedAt }
      */
     interestProfile: text('interest_profile'),
+    /**
+     * Buyer email notification prefs JSON:
+     * { emailUnreadDm, emailContractUpdates, emailMarketing }
+     */
+    notificationPrefs: text('notification_prefs'),
     /** JSON string array of saved developer_products.id */
     savedProductIds: text('saved_product_ids'),
     onboardingCompletedAt: timestamp('onboarding_completed_at'),

@@ -238,6 +238,20 @@ export class UserContractController {
             return c.json({ success: false, error: e instanceof Error ? e.message : 'Failed' }, 400);
         }
     }
+
+    async getInvoice(c: Context) {
+        const u = c.get('user') as JWTPayload | undefined;
+        if (!u || u.role !== 'client') return c.json({ success: false, error: 'Unauthorized' }, 401);
+        const publicId = c.req.param('publicId');
+        try {
+            const invoice = await contractService.getInvoiceForClient(publicId, u.id);
+            return c.json({ success: true, data: invoice });
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : 'Failed';
+            const status = msg === 'Contract not found' ? 404 : 400;
+            return c.json({ success: false, error: msg }, status);
+        }
+    }
 }
 
 export const userContractController = new UserContractController();

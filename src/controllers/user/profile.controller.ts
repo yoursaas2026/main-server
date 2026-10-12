@@ -12,6 +12,10 @@ import { getHomeRecommendationRails } from '../../services/client-recommendation
 import { parseInterestProfile } from '../../services/discovery/interest-profile.js';
 import { refreshClientInterestProfile, ensureClientInterestProfile } from '../../services/discovery/rebuild-profile.js';
 import { isDiscoveryEventType, trackDiscoveryEvent } from '../../services/discovery/events.js';
+import {
+    parseClientNotificationPrefs,
+    serializeClientNotificationPrefs,
+} from '../../utils/client-notification-prefs.js';
 
 const UpdateClientProfileSchema = z.object({
     name: z.string().trim().min(2).max(100).optional(),
@@ -37,6 +41,13 @@ const UpdateClientProfileSchema = z.object({
     painPoints: z.array(z.string().trim().max(80)).max(3).optional(),
     preferredIntegrations: z.array(z.string().trim().max(80)).max(20).optional(),
     currentTools: z.array(z.string().trim().max(80)).max(30).optional(),
+    notificationPrefs: z
+        .object({
+            emailUnreadDm: z.boolean().optional(),
+            emailContractUpdates: z.boolean().optional(),
+            emailMarketing: z.boolean().optional(),
+        })
+        .optional(),
     completeOnboarding: z.boolean().optional(),
 });
 
@@ -84,6 +95,7 @@ function pickClientProfile(client: typeof clients.$inferSelect) {
             tagCount: Object.keys(interest.base).length + Object.keys(interest.learned).length,
             updatedAt: interest.updatedAt,
         },
+        notificationPrefs: parseClientNotificationPrefs(client.notificationPrefs),
         isEmailVerified: client.isEmailVerified,
         authProvider: client.authProvider,
         onboardingCompletedAt: client.onboardingCompletedAt?.toISOString() ?? null,
@@ -198,6 +210,21 @@ export class UserProfileController {
         }
         if (data.currentTools !== undefined) {
             update.currentTools = serializeJsonArray(data.currentTools);
+        }
+        if (data.notificationPrefs !== undefined) {
+            const current = parseClientNotificationPrefs(
+                (
+                    await db.select({ notificationPrefs: clients.notificationPrefs }).from(clients).where(eq(clients.id, user.id)).limit(1)
+                )[0]?.notificationPrefs,
+            );
+            update.notificationPrefs = serializeClientNotificationPrefs({
+                emailUnreadDm:
+                    data.notificationPrefs.emailUnreadDm ?? current.emailUnreadDm,
+                emailContractUpdates:
+                    data.notificationPrefs.emailContractUpdates ?? current.emailContractUpdates,
+                emailMarketing:
+                    data.notificationPrefs.emailMarketing ?? current.emailMarketing,
+            });
         }
 
         // Mark discovery if any discovery-related key was in the body

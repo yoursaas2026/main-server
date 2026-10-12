@@ -225,6 +225,13 @@
       "when": 1791663475303,
       "tag": "0032_worthless_rafael_vega",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1791720000000,
+      "tag": "0033_client_notification_prefs",
+      "breakpoints": true
     }
   ]
 }

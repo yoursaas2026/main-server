@@ -7,6 +7,7 @@ import {
     developerProducts,
     developers,
     productCategories,
+    productReleases,
     productReviews,
 } from '../../db/schema.js';
 import { absoluteMediaUrl } from '../../services/stream-chat.service.js';
@@ -440,6 +441,22 @@ export class PublicProductController {
                 })
                 .from(productReviews)
                 .where(eq(productReviews.productId, p.id));
+
+            const releaseRows = await db
+                .select({
+                    id: productReleases.id,
+                    version: productReleases.version,
+                    title: productReleases.title,
+                    changelog: productReleases.changelog,
+                    releaseNotesUrl: productReleases.releaseNotesUrl,
+                    isCurrent: productReleases.isCurrent,
+                    releasedAt: productReleases.releasedAt,
+                })
+                .from(productReleases)
+                .where(eq(productReleases.productId, p.id))
+                .orderBy(desc(productReleases.releasedAt), desc(productReleases.id))
+                .limit(20);
+
             const product = {
                 id: p.id,
                 projectId: p.projectId,
@@ -497,6 +514,15 @@ export class PublicProductController {
                     difficulty: p.metaDifficulty ?? '',
                     requirements: p.metaRequirements ?? '',
                 },
+                releases: releaseRows.map((r) => ({
+                    id: r.id,
+                    version: r.version,
+                    title: r.title,
+                    changelog: r.changelog,
+                    releaseNotesUrl: r.releaseNotesUrl,
+                    isCurrent: r.isCurrent,
+                    releasedAt: r.releasedAt,
+                })),
                 trust: {
                     verifiedListing: p.trustVerifiedListing ?? false,
                     verifiedByPlatform: p.trustVerifiedByPlatform ?? false,
@@ -533,6 +559,41 @@ export class PublicProductController {
         } catch (error) {
             console.error('[PublicProduct] getBySlug error:', error);
             return c.json({ success: false, error: 'Failed to fetch product' }, 500);
+        }
+    }
+
+    /** Public version history for a live listing (changelog). */
+    async listReleasesBySlug(c: Context) {
+        const slug = (c.req.param('slug') || '').trim().toLowerCase();
+        if (!slug) return c.json({ success: false, error: 'Invalid slug' }, 400);
+
+        try {
+            const [row] = await db
+                .select({ id: developerProducts.id })
+                .from(developerProducts)
+                .where(and(eq(developerProducts.slug, slug), eq(developerProducts.listingStatus, 'live')))
+                .limit(1);
+            if (!row) return c.json({ success: false, error: 'Product not found' }, 404);
+
+            const releases = await db
+                .select({
+                    id: productReleases.id,
+                    version: productReleases.version,
+                    title: productReleases.title,
+                    changelog: productReleases.changelog,
+                    releaseNotesUrl: productReleases.releaseNotesUrl,
+                    isCurrent: productReleases.isCurrent,
+                    releasedAt: productReleases.releasedAt,
+                })
+                .from(productReleases)
+                .where(eq(productReleases.productId, row.id))
+                .orderBy(desc(productReleases.releasedAt), desc(productReleases.id))
+                .limit(50);
+
+            return c.json({ success: true, data: { releases } });
+        } catch (error) {
+            console.error('[PublicProduct] listReleasesBySlug error:', error);
+            return c.json({ success: false, error: 'Failed to fetch releases' }, 500);
         }
     }
 

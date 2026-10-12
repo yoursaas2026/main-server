@@ -9,6 +9,7 @@ import {
     contractPayments,
     contracts,
     developerProducts,
+    developers,
 } from '../db/schema.js';
 import { cashfreeCheckoutMode } from '../config/cashfree.js';
 import { env } from '../config/env.js';
@@ -475,11 +476,44 @@ export const contractService = {
         const c = await this.getByPublicId(contractPublicId);
         if (!c || c.clientId !== clientId) throw new Error('Contract not found');
         if (c.status !== ContractStatus.SUBMITTED) throw new Error('Disputes can be opened after submission');
+        await this.openDisputeRecord(c, { openedByClient: true, actorRole: 'client', actorId: clientId, reason });
+    },
+
+    /**
+     * Seller may open while work is active or after submission (e.g. scope conflict / non-payment of decisions).
+     */
+    async developerOpenDispute(contractPublicId: string, developerId: number, reason: string) {
+        const c = await this.getByPublicId(contractPublicId);
+        if (!c || c.developerId !== developerId) throw new Error('Contract not found');
+        if (c.status !== ContractStatus.ACTIVE && c.status !== ContractStatus.SUBMITTED) {
+            throw new Error('Disputes can be opened while the contract is active or submitted');
+        }
+        await this.openDisputeRecord(c, {
+            openedByClient: false,
+            actorRole: 'developer',
+            actorId: developerId,
+            reason,
+        });
+    },
+
+    async openDisputeRecord(
+        c: typeof contracts.$inferSelect,
+        opts: {
+            openedByClient: boolean;
+            actorRole: 'client' | 'developer';
+            actorId: number;
+            reason: string;
+        },
+    ) {
+        const existing = await this.getLatestDispute(c.id);
+        if (existing && existing.status === 'open') {
+            throw new Error('A dispute is already open on this contract');
+        }
 
         await db.insert(contractDisputes).values({
             contractId: c.id,
-            openedByClient: true,
-            reason: reason.trim(),
+            openedByClient: opts.openedByClient,
+            reason: opts.reason.trim(),
             status: 'open',
         });
 
@@ -489,8 +523,12 @@ export const contractService = {
             .set({ status: next, escrowFrozen: true, updatedAt: new Date() })
             .where(eq(contracts.id, c.id));
 
-        await logEvent(c.id, c.status, next, 'client', clientId, { reason });
-        await notify(c.id, `⚠️ Client opened a dispute on #${c.publicId.slice(0, 8)}. Funds are frozen pending admin review.`);
+        await logEvent(c.id, c.status, next, opts.actorRole, opts.actorId, { reason: opts.reason });
+        const who = opts.openedByClient ? 'Client' : 'Seller';
+        await notify(
+            c.id,
+            `⚠️ ${who} opened a dispute on #${c.publicId.slice(0, 8)}. Funds are frozen pending admin review.`,
+        );
     },
 
     async maybeAutoCompleteClientDeadline(contractId: number) {
@@ -558,6 +596,19 @@ export const contractService = {
             contractId,
             `🎉 Contract #${c.publicId.slice(0, 8)} marked **completed**. From escrow: developer ₹${(devShare / 100).toFixed(2)} (${100 - platformPct}%), platform ₹${(platShare / 100).toFixed(2)} (${platformPct}%).`
         );
+
+        // Discovery learner: completed contracts strengthen interest tags for this listing.
+        void import('./discovery/events.js')
+            .then(({ trackDiscoveryEvent }) =>
+                trackDiscoveryEvent({
+                    clientId: c.clientId,
+                    productId: c.productId,
+                    eventType: 'contract_completed',
+                    surface: 'contract',
+                    meta: { contractId: c.id, reason },
+                }),
+            )
+            .catch((err) => console.warn('[Contract] contract_completed learn skipped:', err));
 
         await contractSettlementService.executeAfterLedgerUpdate(contractId, {
             refundClientPaise: 0,
@@ -837,5 +888,119 @@ export const contractService = {
             releaseDeveloperPaise: input.releaseDeveloperPaise,
             reason: 'dispute_resolution',
         });
+    },
+
+    /**
+     * Buyer-facing payment receipt / invoice payload (print → PDF in browser).
+     * Available once escrow has been funded (active and later), not while awaiting payment.
+     */
+    async getInvoiceForClient(contractPublicId: string, clientId: number) {
+        const c = await this.getByPublicId(contractPublicId);
+        if (!c || c.clientId !== clientId) throw new Error('Contract not found');
+
+        const unpaid = new Set<string>([
+            ContractStatus.PENDING_DEVELOPER_ACCEPTANCE,
+            ContractStatus.REJECTED_BY_DEVELOPER,
+            ContractStatus.AWAITING_CLIENT_PAYMENT,
+            ContractStatus.CANCELLED_BY_CLIENT,
+        ]);
+        if (unpaid.has(c.status)) {
+            throw new Error('Invoice is available after escrow payment');
+        }
+
+        const [buyer] = await db
+            .select({
+                name: clients.name,
+                email: clients.email,
+                companyName: clients.companyName,
+                billingAddress: clients.billingAddress,
+                taxId: clients.taxId,
+                city: clients.city,
+                country: clients.country,
+            })
+            .from(clients)
+            .where(eq(clients.id, clientId))
+            .limit(1);
+
+        const [seller] = await db
+            .select({
+                name: developers.name,
+                company: developers.company,
+                email: developers.email,
+            })
+            .from(developers)
+            .where(eq(developers.id, c.developerId))
+            .limit(1);
+
+        const [product] = await db
+            .select({ name: developerProducts.name, slug: developerProducts.slug })
+            .from(developerProducts)
+            .where(eq(developerProducts.id, c.productId))
+            .limit(1);
+
+        const payments = await db
+            .select({
+                purpose: contractPayments.purpose,
+                orderId: contractPayments.orderId,
+                paymentId: contractPayments.paymentId,
+                amountPaise: contractPayments.amountPaise,
+                status: contractPayments.status,
+                createdAt: contractPayments.createdAt,
+            })
+            .from(contractPayments)
+            .where(eq(contractPayments.contractId, c.id))
+            .orderBy(desc(contractPayments.createdAt));
+
+        const settlement = buildContractSettlementPreview(c);
+        const invoiceNumber = `YS-${c.publicId.replace(/-/g, '').slice(0, 12).toUpperCase()}`;
+
+        return {
+            invoiceNumber,
+            issuedAt: new Date().toISOString(),
+            contract: {
+                publicId: c.publicId,
+                status: c.status,
+                planTier: c.planTier,
+                scopeText: c.scopeText,
+                currency: c.currency || 'INR',
+                createdAt: c.createdAt,
+                completedAt: c.completedAt,
+                paidAt:
+                    payments.find((p) => p.purpose === 'initial_escrow' && p.status === 'completed')?.createdAt ??
+                    c.lockedFieldsAt,
+            },
+            product: {
+                name: product?.name ?? 'Marketplace listing',
+                slug: product?.slug ?? null,
+            },
+            buyer: buyer
+                ? {
+                      name: buyer.name,
+                      email: buyer.email,
+                      companyName: buyer.companyName,
+                      billingAddress: buyer.billingAddress,
+                      taxId: buyer.taxId,
+                      city: buyer.city,
+                      country: buyer.country,
+                  }
+                : null,
+            seller: seller
+                ? {
+                      name: seller.name,
+                      company: seller.company,
+                      email: seller.email,
+                  }
+                : null,
+            amounts: {
+                grossAmountPaise: c.grossAmountPaise,
+                nonRefundableFeePaise: c.nonRefundableFeePaise,
+                escrowAmountPaise: c.escrowAmountPaise,
+                developerReleasedPaise: c.developerReleasedPaise,
+                platformReleasedPaise: c.platformReleasedPaise,
+            },
+            settlement,
+            payments,
+            note: 'This is a YourSaaS marketplace receipt for escrow contract payment. It is not a GST tax invoice from the seller unless separately issued.',
+        };
     },
 };

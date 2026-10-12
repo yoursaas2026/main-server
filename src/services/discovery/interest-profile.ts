@@ -138,6 +138,28 @@ export function applyLearnedDelta(
     };
 }
 
+/**
+ * Soften rabbit holes: multiply `learned` weights only (questionnaire `base` untouched).
+ * Tags that fall below `dropBelow` are removed.
+ */
+export function decayLearnedWeights(
+    profile: InterestProfile,
+    factor = 0.95,
+    dropBelow = 0.5,
+): InterestProfile {
+    const learned: Record<string, number> = {};
+    for (const [tag, w] of Object.entries(profile.learned)) {
+        if (typeof w !== 'number' || !Number.isFinite(w)) continue;
+        const next = w * factor;
+        if (next >= dropBelow) learned[tag] = Math.min(INTEREST_TAG_CAP, next);
+    }
+    return {
+        ...profile,
+        learned,
+        updatedAt: new Date().toISOString(),
+    };
+}
+
 export function topTags(profile: InterestProfile, limit = 8): string[] {
     return Object.entries(effectiveWeights(profile))
         .sort((a, b) => b[1] - a[1])

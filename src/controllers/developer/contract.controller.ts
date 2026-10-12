@@ -161,6 +161,23 @@ export class DeveloperContractController {
         }
     }
 
+    async openDispute(c: Context) {
+        const u = c.get('user') as JWTPayload | undefined;
+        if (!u || u.role !== 'developer') return c.json({ success: false, error: 'Unauthorized' }, 401);
+        const publicId = c.req.param('publicId');
+        const body = await c.req.json().catch(() => null);
+        const reason = typeof body?.reason === 'string' ? body.reason.trim() : '';
+        if (reason.length < 10) {
+            return c.json({ success: false, error: 'Please provide a clear reason (10+ chars).' }, 400);
+        }
+        try {
+            await contractService.developerOpenDispute(publicId, u.id, reason);
+            return c.json({ success: true });
+        } catch (e) {
+            return c.json({ success: false, error: e instanceof Error ? e.message : 'Failed' }, 400);
+        }
+    }
+
     async approveAmendment(c: Context) {
         const u = c.get('user') as JWTPayload | undefined;
         if (!u || u.role !== 'developer') return c.json({ success: false, error: 'Unauthorized' }, 401);

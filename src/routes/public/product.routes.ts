@@ -12,6 +12,7 @@ publicProductRoutes.get('/by-id/:id/contract-pricing', optionalAuthMiddleware, (
 );
 publicProductRoutes.get('/card/:id', optionalAuthMiddleware, (c) => publicProductController.getCardById(c));
 publicProductRoutes.get('/:slug/related', optionalAuthMiddleware, (c) => publicProductController.getRelatedBySlug(c));
+publicProductRoutes.get('/:slug/releases', optionalAuthMiddleware, (c) => publicProductController.listReleasesBySlug(c));
 publicProductRoutes.get('/:slug', optionalAuthMiddleware, (c) => publicProductController.getBySlug(c));
 publicProductRoutes.get('/:slug/reviews', optionalAuthMiddleware, (c) => publicProductController.listReviews(c));
 publicProductRoutes.post('/:slug/reviews', authMiddleware, (c) => publicProductController.createReview(c));

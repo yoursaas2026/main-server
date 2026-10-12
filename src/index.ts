@@ -41,6 +41,7 @@ import {
     marketingCampaignsRoutes,
 } from './routes/marketing/index.js';
 import { startContractJobs } from './jobs/contract-jobs.js';
+import { startDiscoveryJobs } from './jobs/discovery-jobs.js';
 import { startMarketingJobs } from './jobs/marketing-jobs.js';
 import { startSubscriptionJobs } from './jobs/subscription-jobs.js';
 import streamWebhookRoutes from './routes/webhooks/stream.routes.js';
@@ -177,6 +178,7 @@ serve({
 startContractJobs();
 startSubscriptionJobs();
 startMarketingJobs();
+startDiscoveryJobs();
 void ensureStreamUnreadReminders();
 
 export default app;

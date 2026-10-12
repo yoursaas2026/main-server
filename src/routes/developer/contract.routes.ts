@@ -12,6 +12,7 @@ developerContractRoutes.get('/:publicId', (c) => developerContractController.get
 developerContractRoutes.post('/:publicId/accept', (c) => developerContractController.accept(c));
 developerContractRoutes.post('/:publicId/reject', (c) => developerContractController.reject(c));
 developerContractRoutes.post('/:publicId/submit', (c) => developerContractController.submit(c));
+developerContractRoutes.post('/:publicId/open-dispute', (c) => developerContractController.openDispute(c));
 developerContractRoutes.post('/:publicId/amendments', (c) => developerContractController.proposeAmendment(c));
 
 export default developerContractRoutes;
