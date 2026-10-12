@@ -748,6 +748,33 @@ export const contractService = {
         return { needsPayment: false as const };
     },
 
+    /** Counterparty (or proposer) declines a pending amendment before payment. */
+    async rejectAmendment(amendmentId: number, actorClientId?: number, actorDeveloperId?: number) {
+        const [am] = await db.select().from(contractAmendments).where(eq(contractAmendments.id, amendmentId)).limit(1);
+        if (!am || am.status !== 'pending_counterparty') throw new Error('Invalid amendment');
+
+        const [c] = await db.select().from(contracts).where(eq(contracts.id, am.contractId)).limit(1);
+        if (!c) throw new Error('Contract missing');
+
+        const isClient = actorClientId != null && actorClientId === c.clientId;
+        const isDeveloper = actorDeveloperId != null && actorDeveloperId === c.developerId;
+        if (!isClient && !isDeveloper) throw new Error('Not allowed');
+
+        await db
+            .update(contractAmendments)
+            .set({ status: 'rejected' })
+            .where(eq(contractAmendments.id, amendmentId));
+
+        const actorRole = isClient ? 'client' : 'developer';
+        const actorId = isClient ? actorClientId! : actorDeveloperId!;
+        await logEvent(c.id, c.status, c.status, actorRole, actorId, { amendmentRejected: amendmentId });
+        await notify(
+            c.id,
+            `❌ Amendment #${am.amendmentNumber} was declined. Contract scope is unchanged.`,
+        );
+        return { rejected: true as const };
+    },
+
     async verifyEscrowPayment(orderId: string, clientId: number) {
         const order = await paymentService.fetchOrder(orderId);
         if (order.order_status !== 'PAID') {

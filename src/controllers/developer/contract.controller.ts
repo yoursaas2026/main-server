@@ -193,6 +193,22 @@ export class DeveloperContractController {
             return c.json({ success: false, error: e instanceof Error ? e.message : 'Failed' }, 400);
         }
     }
+
+    async rejectAmendment(c: Context) {
+        const u = c.get('user') as JWTPayload | undefined;
+        if (!u || u.role !== 'developer') return c.json({ success: false, error: 'Unauthorized' }, 401);
+        const publicId = c.req.param('publicId');
+        const row = await contractService.getByPublicId(publicId);
+        if (!row || row.developerId !== u.id) return c.json({ success: false, error: 'Not found' }, 404);
+        const amendmentId = parseInt(c.req.param('amendmentId') || '', 10);
+        if (!Number.isInteger(amendmentId)) return c.json({ success: false, error: 'Invalid id' }, 400);
+        try {
+            const r = await contractService.rejectAmendment(amendmentId, undefined, u.id);
+            return c.json({ success: true, data: r });
+        } catch (e) {
+            return c.json({ success: false, error: e instanceof Error ? e.message : 'Failed' }, 400);
+        }
+    }
 }
 
 export const developerContractController = new DeveloperContractController();

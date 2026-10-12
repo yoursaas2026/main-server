@@ -8,6 +8,7 @@ const developerContractRoutes = new Hono<BlankEnv, BlankSchema, '/api/developer/
 developerContractRoutes.use('/*', authMiddleware);
 developerContractRoutes.get('/', (c) => developerContractController.list(c));
 developerContractRoutes.post('/:publicId/amendments/:amendmentId/approve', (c) => developerContractController.approveAmendment(c));
+developerContractRoutes.post('/:publicId/amendments/:amendmentId/reject', (c) => developerContractController.rejectAmendment(c));
 developerContractRoutes.get('/:publicId', (c) => developerContractController.getOne(c));
 developerContractRoutes.post('/:publicId/accept', (c) => developerContractController.accept(c));
 developerContractRoutes.post('/:publicId/reject', (c) => developerContractController.reject(c));

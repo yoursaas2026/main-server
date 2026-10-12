@@ -1,5 +1,5 @@
 import type { Context } from 'hono';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { db } from '../../db/index.js';
 import { developerProducts, developers } from '../../db/schema.js';
 import { absoluteMediaUrl } from '../../services/stream-chat.service.js';
@@ -56,6 +56,7 @@ export class PublicDeveloperController {
                 return c.json({ success: false, error: 'Developer not found' }, 404);
             }
 
+            // Public profile: live listings only (never expose drafts / unpublished names).
             const listings = await db
                 .select({
                     name: developerProducts.name,
@@ -64,7 +65,12 @@ export class PublicDeveloperController {
                     listingStatus: developerProducts.listingStatus,
                 })
                 .from(developerProducts)
-                .where(eq(developerProducts.developerId, id));
+                .where(
+                    and(
+                        eq(developerProducts.developerId, id),
+                        eq(developerProducts.listingStatus, 'live'),
+                    ),
+                );
 
             return c.json({
                 success: true,
@@ -96,7 +102,7 @@ export class PublicDeveloperController {
                             name: row.name,
                             slug: row.slug,
                             tagline: row.tagline ?? '',
-                            status: (row.listingStatus || 'draft').toLowerCase() === 'live' ? 'live' : 'draft',
+                            status: 'live' as const,
                         })),
                     },
                 },

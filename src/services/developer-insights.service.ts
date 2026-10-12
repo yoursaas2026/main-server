@@ -484,8 +484,44 @@ export const developerInsightsService = {
             .where(and(eq(productReleases.id, releaseId), eq(productReleases.productId, productId)))
             .limit(1);
         if (!existing) throw new Error('Release not found');
+        const wasCurrent = existing.isCurrent;
         await db.delete(productReleases).where(eq(productReleases.id, releaseId));
-        return { deleted: true, wasCurrent: existing.isCurrent };
+
+        // Keep PDP metaVersion in sync: promote newest remaining release, or clear meta.
+        if (wasCurrent) {
+            const [next] = await db
+                .select()
+                .from(productReleases)
+                .where(eq(productReleases.productId, productId))
+                .orderBy(desc(productReleases.releasedAt), desc(productReleases.id))
+                .limit(1);
+
+            if (next) {
+                await db
+                    .update(productReleases)
+                    .set({ isCurrent: true, updatedAt: new Date() })
+                    .where(eq(productReleases.id, next.id));
+                await db
+                    .update(developerProducts)
+                    .set({
+                        metaVersion: next.version,
+                        metaReleaseNotesUrl: next.releaseNotesUrl,
+                        updatedAt: new Date(),
+                    })
+                    .where(eq(developerProducts.id, productId));
+            } else {
+                await db
+                    .update(developerProducts)
+                    .set({
+                        metaVersion: null,
+                        metaReleaseNotesUrl: null,
+                        updatedAt: new Date(),
+                    })
+                    .where(eq(developerProducts.id, productId));
+            }
+        }
+
+        return { deleted: true, wasCurrent };
     },
 
     /**
@@ -775,7 +811,9 @@ export const developerInsightsService = {
 
         for (const row of rows) {
             const released = row.developerReleasedPaise;
-            if (typeof released === 'number' && released > 0) {
+            const settlementOk = (row.settlementStatus || '').toLowerCase() === 'executed';
+            // Only count Cashfree-executed settlements as "lifetime paid" (ledger release alone is not payout truth).
+            if (typeof released === 'number' && released > 0 && settlementOk) {
                 lifetimePaidPaise += released;
                 payoutHistory.push({
                     contractId: row.id,
@@ -801,13 +839,12 @@ export const developerInsightsService = {
                 });
             }
 
-            if (
-                row.status === ContractStatus.COMPLETED &&
-                (!released || released <= 0) &&
-                row.settlementStatus &&
-                ['pending', 'failed', 'partial', 'skipped'].includes(row.settlementStatus)
-            ) {
-                pendingSettlementPaise += estimateDeveloperShare(row.escrowAmountPaise);
+            if (row.status === ContractStatus.COMPLETED && !settlementOk) {
+                const pendingAmt =
+                    typeof released === 'number' && released > 0
+                        ? released
+                        : estimateDeveloperShare(row.escrowAmountPaise);
+                pendingSettlementPaise += pendingAmt;
             }
         }
 

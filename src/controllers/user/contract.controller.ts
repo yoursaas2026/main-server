@@ -239,6 +239,22 @@ export class UserContractController {
         }
     }
 
+    async rejectAmendment(c: Context) {
+        const u = c.get('user') as JWTPayload | undefined;
+        if (!u || u.role !== 'client') return c.json({ success: false, error: 'Unauthorized' }, 401);
+        const publicId = c.req.param('publicId');
+        const row = await contractService.getByPublicId(publicId);
+        if (!row || row.clientId !== u.id) return c.json({ success: false, error: 'Not found' }, 404);
+        const amendmentId = parseInt(c.req.param('amendmentId') || '', 10);
+        if (!Number.isInteger(amendmentId)) return c.json({ success: false, error: 'Invalid id' }, 400);
+        try {
+            const r = await contractService.rejectAmendment(amendmentId, u.id, undefined);
+            return c.json({ success: true, data: r });
+        } catch (e) {
+            return c.json({ success: false, error: e instanceof Error ? e.message : 'Failed' }, 400);
+        }
+    }
+
     async getInvoice(c: Context) {
         const u = c.get('user') as JWTPayload | undefined;
         if (!u || u.role !== 'client') return c.json({ success: false, error: 'Unauthorized' }, 401);
